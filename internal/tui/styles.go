@@ -23,14 +23,15 @@ const (
 
 // colours
 var (
-	colorGreen  = lipgloss.Color("#00E676")
-	colorYellow = lipgloss.Color("#FFD600")
-	colorRed    = lipgloss.Color("#FF1744")
-	colorGray   = lipgloss.Color("#78909C")
-	colorBlue   = lipgloss.Color("#40C4FF")
-	colorDim    = lipgloss.Color("#546E7A")
-	colorBorder = lipgloss.Color("#37474F")
-	colorHeader = lipgloss.Color("#263238")
+	colorGreen     = lipgloss.Color("#00E676")
+	colorYellow    = lipgloss.Color("#FFD600")
+	colorRed       = lipgloss.Color("#FF1744")
+	colorGray      = lipgloss.Color("#78909C")
+	colorBlue      = lipgloss.Color("#40C4FF")
+	colorDim       = lipgloss.Color("#546E7A")
+	colorBorder    = lipgloss.Color("#37474F")
+	colorHeader    = lipgloss.Color("#263238")
+	colorSearchBar = lipgloss.Color("#004D40")
 )
 
 var (
@@ -93,4 +94,16 @@ var (
 
 	// separatorStyle is the vertical divider column between the two panels.
 	separatorStyle = lipgloss.NewStyle().Foreground(colorBlue)
+
+	// searchMatchStyle highlights all occurrences of the search query.
+	searchMatchStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#FFD600")).
+				Foreground(lipgloss.Color("#000000")).
+				Bold(true)
+
+	// searchCurrentMatchStyle highlights the currently active search match.
+	searchCurrentMatchStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#FF6D00")).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Bold(true)
 )

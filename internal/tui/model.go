@@ -107,6 +107,12 @@ type Model struct {
 	// atBottom tracks whether the viewport was at the bottom before the last
 	// update, so we can decide to auto-scroll.
 	atBottom bool
+
+	// search state
+	searchMode     bool
+	searchQuery    string
+	searchMatches  []int // line indices (in logBuffer) matching the query
+	searchMatchIdx int   // index into searchMatches for the current match
 }
 
 // NewModel constructs a Model ready for use with bubbletea.
@@ -188,72 +194,113 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Keyboard input ───────────────────────────────────────────────────────
 	case tea.KeyMsg:
-		switch {
-		case matchKey(msg, m.keys.KillAll):
-			m.quitting = true
-			m.stopAll = true
-			m.cancel()
-			return m, tea.Quit
+		if m.searchMode {
+			switch {
+			case msg.Type == tea.KeyEscape:
+				m.searchMode = false
+				m.searchQuery = ""
+				m.searchMatches = nil
+				m.searchMatchIdx = 0
+				m.resizeViewport()
+				m.refreshViewportContent()
 
-		case matchKey(msg, m.keys.Detach):
-			m.quitting = true
-			m.cancel()
-			return m, tea.Quit
+			case msg.Type == tea.KeyEnter:
+				m.nextSearchMatch()
 
-		case matchKey(msg, m.keys.Up):
-			if m.selected > 0 {
-				m.selected--
-				m.loadSelectedLogs()
+			case msg.Type == tea.KeyRunes && string(msg.Runes) == "/":
+				m.nextSearchMatch()
+
+			case msg.Type == tea.KeyBackspace || msg.Type == tea.KeyCtrlH:
+				if len(m.searchQuery) > 0 {
+					runes := []rune(m.searchQuery)
+					m.searchQuery = string(runes[:len(runes)-1])
+					m.updateSearchMatches()
+					m.refreshViewportContent()
+				}
+
+			case msg.Type == tea.KeyRunes:
+				m.searchQuery += string(msg.Runes)
+				m.updateSearchMatches()
+				if len(m.searchMatches) > 0 {
+					m.jumpToCurrentMatch()
+				}
+				m.refreshViewportContent()
 			}
+		} else {
+			switch {
+			case matchKey(msg, m.keys.KillAll):
+				m.quitting = true
+				m.stopAll = true
+				m.cancel()
+				return m, tea.Quit
 
-		case matchKey(msg, m.keys.Down):
-			if m.selected < len(m.targets)-1 {
-				m.selected++
-				m.loadSelectedLogs()
-			}
+			case matchKey(msg, m.keys.Detach):
+				m.quitting = true
+				m.cancel()
+				return m, tea.Quit
 
-		case matchKey(msg, m.keys.Tab):
-			if len(m.targets) > 0 {
-				m.selected = (m.selected + 1) % len(m.targets)
-				m.loadSelectedLogs()
-			}
+			case matchKey(msg, m.keys.Up):
+				if m.selected > 0 {
+					m.selected--
+					m.loadSelectedLogs()
+				}
 
-		case matchKey(msg, m.keys.Restart):
-			if len(m.targets) > 0 {
-				name := m.targets[m.selected].Name
-				cmds = append(cmds, m.doRestart(name))
-			}
+			case matchKey(msg, m.keys.Down):
+				if m.selected < len(m.targets)-1 {
+					m.selected++
+					m.loadSelectedLogs()
+				}
 
-		case matchKey(msg, m.keys.Stop):
-			if len(m.targets) > 0 {
-				name := m.targets[m.selected].Name
-				cmds = append(cmds, m.doStop(name))
-			}
+			case matchKey(msg, m.keys.Tab):
+				if len(m.targets) > 0 {
+					m.selected = (m.selected + 1) % len(m.targets)
+					m.loadSelectedLogs()
+				}
 
-		case matchKey(msg, m.keys.Start):
-			if len(m.targets) > 0 {
-				name := m.targets[m.selected].Name
-				cmds = append(cmds, m.doStart(name))
-			}
+			case matchKey(msg, m.keys.Restart):
+				if len(m.targets) > 0 {
+					name := m.targets[m.selected].Name
+					cmds = append(cmds, m.doRestart(name))
+				}
 
-		case matchKey(msg, m.keys.Dump):
-			if len(m.targets) > 0 {
-				name := m.targets[m.selected].Name
-				cmds = append(cmds, m.doDump(name))
-			}
+			case matchKey(msg, m.keys.Stop):
+				if len(m.targets) > 0 {
+					name := m.targets[m.selected].Name
+					cmds = append(cmds, m.doStop(name))
+				}
 
-		case matchKey(msg, m.keys.Clear):
-			if len(m.targets) > 0 {
-				name := m.targets[m.selected].Name
-				cmds = append(cmds, m.doClear(name))
-			}
+			case matchKey(msg, m.keys.Start):
+				if len(m.targets) > 0 {
+					name := m.targets[m.selected].Name
+					cmds = append(cmds, m.doStart(name))
+				}
 
-		default:
-			// Forward scroll keys to the viewport.
-			var vpCmd tea.Cmd
-			m.viewport, vpCmd = m.viewport.Update(msg)
-			if vpCmd != nil {
-				cmds = append(cmds, vpCmd)
+			case matchKey(msg, m.keys.Dump):
+				if len(m.targets) > 0 {
+					name := m.targets[m.selected].Name
+					cmds = append(cmds, m.doDump(name))
+				}
+
+			case matchKey(msg, m.keys.Clear):
+				if len(m.targets) > 0 {
+					name := m.targets[m.selected].Name
+					cmds = append(cmds, m.doClear(name))
+				}
+
+			case matchKey(msg, m.keys.Search):
+				m.searchMode = true
+				m.searchQuery = ""
+				m.searchMatches = nil
+				m.searchMatchIdx = 0
+				m.resizeViewport()
+
+			default:
+				// Forward scroll keys to the viewport.
+				var vpCmd tea.Cmd
+				m.viewport, vpCmd = m.viewport.Update(msg)
+				if vpCmd != nil {
+					cmds = append(cmds, vpCmd)
+				}
 			}
 		}
 
@@ -262,13 +309,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		buf, ok := m.logs[msg.target]
 		if ok {
 			buf.append(msg.line)
-		}
-		// If this is the currently selected target, append to viewport.
-		if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
-			wasAtBottom := m.viewport.AtBottom()
-			m.viewport.SetContent(buf.content())
-			if wasAtBottom {
-				m.viewport.GotoBottom()
+			// If this is the currently selected target, update viewport.
+			if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+				wasAtBottom := m.viewport.AtBottom()
+				// Track new matching line when search is active.
+				if m.searchMode && m.searchQuery != "" {
+					if strings.Contains(strings.ToLower(msg.line), strings.ToLower(m.searchQuery)) {
+						m.searchMatches = append(m.searchMatches, len(buf.lines)-1)
+					}
+				}
+				m.viewport.SetContent(m.viewportContent(buf))
+				if wasAtBottom {
+					m.viewport.GotoBottom()
+				}
 			}
 		}
 		// Re-queue so we keep receiving from this target's channel.
@@ -290,6 +343,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
 			m.viewport.SetContent("")
+			if m.searchMode {
+				m.searchMatches = nil
+				m.searchMatchIdx = 0
+			}
 		}
 
 	// ── Action result (start/stop/restart/dump) ──────────────────────────────
@@ -321,12 +378,17 @@ func (m Model) View() string {
 	right := m.renderRight()
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
-	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+	parts := []string{header}
+	if m.searchMode {
+		parts = append(parts, m.renderSearchBar())
+	}
+	parts = append(parts, body)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // renderSeparator renders a 1-char wide vertical divider between the two panels.
 func (m Model) renderSeparator() string {
-	h := m.height - 1 // subtract header row
+	h := m.height - 1 - m.searchBarHeight() // subtract header + search bar
 	if h < 1 {
 		h = 1
 	}
@@ -335,6 +397,14 @@ func (m Model) renderSeparator() string {
 		lines[i] = "│"
 	}
 	return separatorStyle.Render(strings.Join(lines, "\n"))
+}
+
+// searchBarHeight returns 1 when the search bar is visible, 0 otherwise.
+func (m Model) searchBarHeight() int {
+	if m.searchMode {
+		return 1
+	}
+	return 0
 }
 
 // ─── Rendering helpers ───────────────────────────────────────────────────────
@@ -367,8 +437,8 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderLeft() string {
-	// Available inner height: total height minus header (1) minus panel borders (2).
-	innerHeight := m.height - 1 - 2
+	// Available inner height: total height minus header (1), search bar, minus panel borders (2).
+	innerHeight := m.height - 1 - m.searchBarHeight() - 2
 	if innerHeight < 1 {
 		innerHeight = 1
 	}
@@ -480,7 +550,7 @@ func (m Model) renderRight() string {
 
 	return rightPanelStyle.
 		Width(m.rightPanelOuterWidth()).
-		Height(m.height - 1 - 2). // total - header - borders
+		Height(m.height - 1 - m.searchBarHeight() - 2). // total - header - search bar - borders
 		Render(content)
 }
 
@@ -510,8 +580,8 @@ func (m Model) rightPanelInnerWidth() int {
 
 // resizeViewport recalculates viewport dimensions after a terminal resize.
 func (m *Model) resizeViewport() {
-	// Height: total - header (1) - right panel borders (2) - title line (1) - separator (1).
-	vpHeight := m.height - 1 - 2 - 1 - 1
+	// Height: total - header (1) - search bar - right panel borders (2) - title line (1) - separator (1).
+	vpHeight := m.height - 1 - m.searchBarHeight() - 2 - 1 - 1
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
@@ -533,7 +603,10 @@ func (m *Model) loadSelectedLogs() {
 		m.viewport.SetContent("")
 		return
 	}
-	m.viewport.SetContent(buf.content())
+	if m.searchMode {
+		m.updateSearchMatches()
+	}
+	m.viewport.SetContent(m.viewportContent(buf))
 	m.viewport.GotoBottom()
 	m.atBottom = true
 }
@@ -568,6 +641,155 @@ func statusIconChar(s state.Status) string {
 	default:
 		return "?"
 	}
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+// renderSearchBar renders the search input bar shown under the header when
+// search mode is active.
+func (m Model) renderSearchBar() string {
+	cursor := "█"
+	matchInfo := ""
+	if len(m.searchMatches) > 0 {
+		matchInfo = fmt.Sprintf("  [%d/%d]", m.searchMatchIdx+1, len(m.searchMatches))
+	} else if m.searchQuery != "" {
+		matchInfo = "  [no matches]"
+	}
+
+	left := " /" + m.searchQuery + cursor + matchInfo
+	right := "esc=close  enter|/=next "
+
+	gap := m.width - lipgloss.Width(left) - len(right)
+	if gap < 1 {
+		gap = 1
+	}
+	line := left + strings.Repeat(" ", gap) + right
+	if len(line) > m.width {
+		line = line[:m.width]
+	}
+
+	return lipgloss.NewStyle().
+		Background(colorSearchBar).
+		Foreground(lipgloss.Color("#ECEFF1")).
+		Render(line)
+}
+
+// updateSearchMatches rebuilds the list of matching line indices for the
+// current query and selected target.
+func (m *Model) updateSearchMatches() {
+	m.searchMatches = nil
+	m.searchMatchIdx = 0
+	if m.searchQuery == "" || len(m.targets) == 0 {
+		return
+	}
+	name := m.targets[m.selected].Name
+	buf, ok := m.logs[name]
+	if !ok {
+		return
+	}
+	q := strings.ToLower(m.searchQuery)
+	for i, line := range buf.lines {
+		if strings.Contains(strings.ToLower(line), q) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
+}
+
+// jumpToCurrentMatch scrolls the viewport so the current match is visible.
+func (m *Model) jumpToCurrentMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	m.viewport.SetYOffset(m.searchMatches[m.searchMatchIdx])
+}
+
+// nextSearchMatch advances to the next match (wrapping) and refreshes the
+// viewport so the current-match highlight moves.
+func (m *Model) nextSearchMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	m.searchMatchIdx = (m.searchMatchIdx + 1) % len(m.searchMatches)
+	m.jumpToCurrentMatch()
+	m.refreshViewportContent()
+}
+
+// refreshViewportContent re-renders the viewport content in place, preserving
+// the scroll position unless the viewport was at the bottom.
+func (m *Model) refreshViewportContent() {
+	if len(m.targets) == 0 {
+		return
+	}
+	name := m.targets[m.selected].Name
+	buf, ok := m.logs[name]
+	if !ok {
+		return
+	}
+	wasAtBottom := m.viewport.AtBottom()
+	m.viewport.SetContent(m.viewportContent(buf))
+	if wasAtBottom {
+		m.viewport.GotoBottom()
+	}
+}
+
+// viewportContent returns the log content to set in the viewport, applying
+// search highlighting when a search is active.
+func (m Model) viewportContent(buf *logBuffer) string {
+	if !m.searchMode || m.searchQuery == "" {
+		return buf.content()
+	}
+	return m.renderLogsWithHighlight(buf)
+}
+
+// renderLogsWithHighlight returns the log lines joined with search matches
+// highlighted. The current match line uses a distinct accent colour.
+func (m Model) renderLogsWithHighlight(buf *logBuffer) string {
+	currentMatchLine := -1
+	if len(m.searchMatches) > 0 {
+		currentMatchLine = m.searchMatches[m.searchMatchIdx]
+	}
+
+	lines := make([]string, len(buf.lines))
+	q := strings.ToLower(m.searchQuery)
+	for i, line := range buf.lines {
+		if strings.Contains(strings.ToLower(line), q) {
+			lines[i] = highlightOccurrences(line, m.searchQuery, i == currentMatchLine)
+		} else {
+			lines[i] = line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// highlightOccurrences wraps every case-insensitive occurrence of query in line
+// with the appropriate lipgloss style. isCurrent selects the accent colour for
+// the active match line.
+func highlightOccurrences(line, query string, isCurrent bool) string {
+	if query == "" {
+		return line
+	}
+	lowerLine := strings.ToLower(line)
+	lowerQuery := strings.ToLower(query)
+	ql := len(lowerQuery)
+
+	style := searchMatchStyle
+	if isCurrent {
+		style = searchCurrentMatchStyle
+	}
+
+	var result strings.Builder
+	offset := 0
+	for offset < len(line) {
+		idx := strings.Index(lowerLine[offset:], lowerQuery)
+		if idx < 0 {
+			result.WriteString(line[offset:])
+			break
+		}
+		result.WriteString(line[offset : offset+idx])
+		result.WriteString(style.Render(line[offset+idx : offset+idx+ql]))
+		offset += idx + ql
+	}
+	return result.String()
 }
 
 // ─── Key match helper ─────────────────────────────────────────────────────────

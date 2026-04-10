@@ -34,6 +34,9 @@ type keyMap struct {
 	// Viewport scroll bindings (passed through to the viewport)
 	PageUp   key.Binding
 	PageDown key.Binding
+
+	// Search opens the search bar.
+	Search key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -87,6 +90,10 @@ func defaultKeyMap() keyMap {
 		PageDown: key.NewBinding(
 			key.WithKeys("pgdown", "f"),
 			key.WithHelp("pgdn/f", "page down"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "search"),
 		),
 	}
 }
