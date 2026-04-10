@@ -1,0 +1,633 @@
+// Copyright 2026 Daniel Valdivia
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package tui
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/dvaldivia/tukituki/internal/config"
+	"github.com/dvaldivia/tukituki/internal/state"
+)
+
+// logBuffer holds the accumulated log lines for a single target.
+type logBuffer struct {
+	lines []string
+}
+
+func (b *logBuffer) append(line string) {
+	b.lines = append(b.lines, line)
+}
+
+func (b *logBuffer) content() string {
+	return strings.Join(b.lines, "\n")
+}
+
+// ─── Msg types ───────────────────────────────────────────────────────────────
+
+// logLineMsg carries a single new log line from a watched target.
+type logLineMsg struct {
+	target string
+	line   string
+}
+
+// statusTickMsg is sent on each periodic status refresh tick.
+type statusTickMsg time.Time
+
+// actionResultMsg carries the outcome of an async action (start/stop/restart).
+type actionResultMsg struct {
+	msg string
+}
+
+// quitMsg signals that the user wants to quit.
+type quitMsg struct{ stopAll bool }
+
+// clearLogMsg is sent after ClearLog completes so the TUI can flush its buffer.
+type clearLogMsg struct{ target string }
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+
+// waitForLogLine blocks on the channel and returns a logLineMsg when a line
+// arrives. It is re-queued after every receipt so we keep listening.
+func waitForLogLine(ch <-chan string, target string) tea.Cmd {
+	return func() tea.Msg {
+		line, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return logLineMsg{target: target, line: line}
+	}
+}
+
+// statusTick returns a command that fires a statusTickMsg every second.
+func statusTick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return statusTickMsg(t)
+	})
+}
+
+// ─── Model ───────────────────────────────────────────────────────────────────
+
+// Model is the root bubbletea model for the tukituki TUI.
+type Model struct {
+	targets    []config.RunTarget
+	manager    ManagerInterface
+	selected   int // index into targets
+	logs       map[string]*logBuffer
+	viewport   viewport.Model
+	width      int
+	height     int
+	logWatches map[string]<-chan string
+	ctx        context.Context
+	cancel     context.CancelFunc
+	quitting   bool
+	stopAll    bool
+	statusMsg  string // transient message shown in the header
+	statuses   map[string]state.Status
+	keys       keyMap
+
+	// atBottom tracks whether the viewport was at the bottom before the last
+	// update, so we can decide to auto-scroll.
+	atBottom bool
+}
+
+// NewModel constructs a Model ready for use with bubbletea.
+func NewModel(targets []config.RunTarget, manager ManagerInterface) Model {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	logs := make(map[string]*logBuffer, len(targets))
+	logWatches := make(map[string]<-chan string, len(targets))
+	statuses := make(map[string]state.Status, len(targets))
+
+	for _, t := range targets {
+		logs[t.Name] = &logBuffer{}
+		statuses[t.Name] = state.StatusUnknown
+	}
+
+	vp := viewport.New(80, 24) // placeholder; resized on WindowSizeMsg
+	vp.SetContent("")
+
+	return Model{
+		targets:    targets,
+		manager:    manager,
+		selected:   0,
+		logs:       logs,
+		viewport:   vp,
+		logWatches: logWatches,
+		ctx:        ctx,
+		cancel:     cancel,
+		statuses:   statuses,
+		keys:       defaultKeyMap(),
+		atBottom:   true,
+	}
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{
+		statusTick(),
+	}
+
+	// Start watching logs for each target and seed the buffer from existing lines.
+	for _, t := range m.targets {
+		existing := m.manager.GetLogLines(t.Name)
+		for _, line := range existing {
+			m.logs[t.Name].append(line)
+		}
+
+		ch := m.manager.WatchLogLines(t.Name)
+		m.logWatches[t.Name] = ch
+		cmds = append(cmds, waitForLogLine(ch, t.Name))
+	}
+
+	// Seed statuses.
+	for name, st := range m.manager.GetAllStatuses() {
+		m.statuses[name] = st
+	}
+
+	// Load selected target's logs into the viewport.
+	if len(m.targets) > 0 {
+		m.viewport.SetContent(m.logs[m.targets[0].Name].content())
+		m.viewport.GotoBottom()
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// ─── Update ──────────────────────────────────────────────────────────────────
+
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+
+	// ── Terminal resize ──────────────────────────────────────────────────────
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.resizeViewport()
+
+	// ── Keyboard input ───────────────────────────────────────────────────────
+	case tea.KeyMsg:
+		switch {
+		case matchKey(msg, m.keys.KillAll):
+			m.quitting = true
+			m.stopAll = true
+			m.cancel()
+			return m, tea.Quit
+
+		case matchKey(msg, m.keys.Detach):
+			m.quitting = true
+			m.cancel()
+			return m, tea.Quit
+
+		case matchKey(msg, m.keys.Up):
+			if m.selected > 0 {
+				m.selected--
+				m.loadSelectedLogs()
+			}
+
+		case matchKey(msg, m.keys.Down):
+			if m.selected < len(m.targets)-1 {
+				m.selected++
+				m.loadSelectedLogs()
+			}
+
+		case matchKey(msg, m.keys.Tab):
+			if len(m.targets) > 0 {
+				m.selected = (m.selected + 1) % len(m.targets)
+				m.loadSelectedLogs()
+			}
+
+		case matchKey(msg, m.keys.Restart):
+			if len(m.targets) > 0 {
+				name := m.targets[m.selected].Name
+				cmds = append(cmds, m.doRestart(name))
+			}
+
+		case matchKey(msg, m.keys.Stop):
+			if len(m.targets) > 0 {
+				name := m.targets[m.selected].Name
+				cmds = append(cmds, m.doStop(name))
+			}
+
+		case matchKey(msg, m.keys.Start):
+			if len(m.targets) > 0 {
+				name := m.targets[m.selected].Name
+				cmds = append(cmds, m.doStart(name))
+			}
+
+		case matchKey(msg, m.keys.Dump):
+			if len(m.targets) > 0 {
+				name := m.targets[m.selected].Name
+				cmds = append(cmds, m.doDump(name))
+			}
+
+		case matchKey(msg, m.keys.Clear):
+			if len(m.targets) > 0 {
+				name := m.targets[m.selected].Name
+				cmds = append(cmds, m.doClear(name))
+			}
+
+		default:
+			// Forward scroll keys to the viewport.
+			var vpCmd tea.Cmd
+			m.viewport, vpCmd = m.viewport.Update(msg)
+			if vpCmd != nil {
+				cmds = append(cmds, vpCmd)
+			}
+		}
+
+	// ── Log line arrived ─────────────────────────────────────────────────────
+	case logLineMsg:
+		buf, ok := m.logs[msg.target]
+		if ok {
+			buf.append(msg.line)
+		}
+		// If this is the currently selected target, append to viewport.
+		if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+			wasAtBottom := m.viewport.AtBottom()
+			m.viewport.SetContent(buf.content())
+			if wasAtBottom {
+				m.viewport.GotoBottom()
+			}
+		}
+		// Re-queue so we keep receiving from this target's channel.
+		if ch, ok := m.logWatches[msg.target]; ok {
+			cmds = append(cmds, waitForLogLine(ch, msg.target))
+		}
+
+	// ── Periodic status refresh ──────────────────────────────────────────────
+	case statusTickMsg:
+		for name, st := range m.manager.GetAllStatuses() {
+			m.statuses[name] = st
+		}
+		cmds = append(cmds, statusTick())
+
+	// ── Log cleared ──────────────────────────────────────────────────────────
+	case clearLogMsg:
+		if buf, ok := m.logs[msg.target]; ok {
+			buf.lines = nil
+		}
+		if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+			m.viewport.SetContent("")
+		}
+
+	// ── Action result (start/stop/restart/dump) ──────────────────────────────
+	case actionResultMsg:
+		m.statusMsg = msg.msg
+		// Clear the status message after 3 seconds.
+		cmds = append(cmds, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return actionResultMsg{msg: ""}
+		}))
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+// ─── View ────────────────────────────────────────────────────────────────────
+
+func (m Model) View() string {
+	if m.quitting {
+		return ""
+	}
+	// Don't render until the terminal size is known.
+	if m.width == 0 || m.height == 0 {
+		return "starting…"
+	}
+
+	header := m.renderHeader()
+	left := m.renderLeft()
+	sep := m.renderSeparator()
+	right := m.renderRight()
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
+	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+}
+
+// renderSeparator renders a 1-char wide vertical divider between the two panels.
+func (m Model) renderSeparator() string {
+	h := m.height - 1 // subtract header row
+	if h < 1 {
+		h = 1
+	}
+	lines := make([]string, h)
+	for i := range lines {
+		lines[i] = "│"
+	}
+	return separatorStyle.Render(strings.Join(lines, "\n"))
+}
+
+// ─── Rendering helpers ───────────────────────────────────────────────────────
+
+func (m Model) renderHeader() string {
+	// Build the header as a single plain string of exactly m.width visible chars,
+	// then apply one style.Render() — no JoinHorizontal, no nested padding.
+	// This guarantees the header is always 1 row and never overflows the terminal.
+	left := " tukituki"
+	if m.statusMsg != "" {
+		left += "  " + m.statusMsg
+	}
+	right := "q=detach  Q/^C=stop all "
+
+	gap := m.width - len(left) - len(right)
+	if gap < 1 {
+		gap = 1
+	}
+	line := left + strings.Repeat(" ", gap) + right
+	// Hard-clamp to m.width so a very narrow terminal can't wrap us.
+	if len(line) > m.width {
+		line = line[:m.width]
+	}
+
+	return lipgloss.NewStyle().
+		Background(colorHeader).
+		Foreground(lipgloss.Color("#ECEFF1")).
+		Bold(true).
+		Render(line)
+}
+
+func (m Model) renderLeft() string {
+	// Available inner height: total height minus header (1) minus panel borders (2).
+	innerHeight := m.height - 1 - 2
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+
+	// Inner width: leftPanelWidth minus border (1 each side). No horizontal
+	// padding on the container — rows are pre-padded to this exact width so
+	// the selected-row highlight fills edge-to-edge and no lipgloss Width()
+	// constraint triggers word-wrap.
+	innerWidth := leftPanelWidth - 2
+	if innerWidth < 4 {
+		innerWidth = 4
+	}
+
+	// fitLine pads or truncates s to exactly innerWidth *visible* columns.
+	// It measures with lipgloss.Width (which strips ANSI codes) so pre-coloured
+	// strings are handled correctly without double-counting escape bytes.
+	fitLine := func(s string) string {
+		w := lipgloss.Width(s)
+		switch {
+		case w < innerWidth:
+			return s + strings.Repeat(" ", innerWidth-w)
+		case w > innerWidth:
+			// Trim runes until we fit — handles multi-byte and wide glyphs.
+			rs := []rune(s)
+			for lipgloss.Width(string(rs)) > innerWidth && len(rs) > 0 {
+				rs = rs[:len(rs)-1]
+			}
+			return string(rs)
+		}
+		return s
+	}
+
+	// ── Target list ──────────────────────────────────────────────────────────
+	// Build each row as a plain string (icon rendered, text plain), then apply
+	// the row style ONCE — this avoids nested ANSI that confuses lipgloss's
+	// width measurement and causes spurious line-wraps inside the container.
+	var rows []string
+	for i, t := range m.targets {
+		iconStr := statusIconChar(m.statuses[t.Name]) // raw char, no ANSI
+		label := t.Name
+		// Reserve: cursor(2) + icon(1) + space(1) = 4 chars of prefix.
+		maxLabel := innerWidth - 4
+		if maxLabel < 1 {
+			maxLabel = 1
+		}
+		if len(label) > maxLabel {
+			label = label[:maxLabel]
+		}
+		if i == m.selected {
+			raw := fitLine("▶ " + iconStr + " " + label)
+			rows = append(rows, selectedItemStyle.Render(raw))
+		} else {
+			raw := fitLine("  " + iconStr + " " + label)
+			rows = append(rows, normalItemStyle.Render(raw))
+		}
+	}
+
+	// ── Blank fill + separator + hints ───────────────────────────────────────
+	rawHints := []string{
+		"r restart  s stop",
+		"S start    d dump",
+		"c clear    q detach",
+		"Q/^C stop all",
+	}
+	// Total fixed lines at the bottom: separator(1) + hints.
+	fixedLines := 1 + len(rawHints)
+	blanks := innerHeight - len(rows) - fixedLines
+	if blanks < 0 {
+		blanks = 0
+	}
+
+	// Assemble all rows as plain strings (no nested styling).
+	allRows := make([]string, 0, innerHeight)
+	allRows = append(allRows, rows...)
+	for range blanks {
+		allRows = append(allRows, strings.Repeat(" ", innerWidth))
+	}
+	allRows = append(allRows, strings.Repeat("─", innerWidth)) // separator
+	for _, h := range rawHints {
+		allRows = append(allRows, fitLine(h)) // plain text, styled by outer container
+	}
+	// Clip to exactly innerHeight lines so the panel never exceeds terminal height.
+	if len(allRows) > innerHeight {
+		allRows = allRows[:innerHeight]
+	}
+	for len(allRows) < innerHeight {
+		allRows = append(allRows, strings.Repeat(" ", innerWidth))
+	}
+
+	// No Width() constraint — avoids lipgloss word-wrap at (Width - 2*padding).
+	// Content is already pre-padded to innerWidth rows; the border-only style
+	// wraps it cleanly without any word-wrap interference.
+	return leftPanelStyle.Render(strings.Join(allRows, "\n"))
+}
+
+func (m Model) renderRight() string {
+	// Panel title.
+	targetName := "(none)"
+	if len(m.targets) > 0 {
+		targetName = m.targets[m.selected].Name
+	}
+	title := rightPanelTitleStyle.Render(targetName)
+	sep := strings.Repeat("─", m.rightPanelInnerWidth())
+
+	titleBlock := lipgloss.JoinVertical(lipgloss.Left, title, sep)
+	vpView := m.viewport.View()
+
+	content := lipgloss.JoinVertical(lipgloss.Left, titleBlock, vpView)
+
+	return rightPanelStyle.
+		Width(m.rightPanelOuterWidth()).
+		Height(m.height - 1 - 2). // total - header - borders
+		Render(content)
+}
+
+// ─── Layout math ─────────────────────────────────────────────────────────────
+
+// rightPanelOuterWidth returns the content width passed to lipgloss Width() for
+// the right panel. Total rendered = this + 2 (left+right border chars).
+// Layout: leftPanelWidth(22) + separator(1) + rightBorders(2) + rightContent = m.width
+func (m Model) rightPanelOuterWidth() int {
+	const separatorWidth = 1
+	w := m.width - leftPanelWidth - separatorWidth - 2
+	if w < 10 {
+		w = 10
+	}
+	return w
+}
+
+// rightPanelInnerWidth returns the usable width inside the right panel.
+func (m Model) rightPanelInnerWidth() int {
+	// outer - 2 border chars - 0 padding (rightPanelStyle has none).
+	w := m.rightPanelOuterWidth() - 2
+	if w < 8 {
+		w = 8
+	}
+	return w
+}
+
+// resizeViewport recalculates viewport dimensions after a terminal resize.
+func (m *Model) resizeViewport() {
+	// Height: total - header (1) - right panel borders (2) - title line (1) - separator (1).
+	vpHeight := m.height - 1 - 2 - 1 - 1
+	if vpHeight < 1 {
+		vpHeight = 1
+	}
+	vpWidth := m.rightPanelInnerWidth()
+
+	m.viewport.Width = vpWidth
+	m.viewport.Height = vpHeight
+}
+
+// loadSelectedLogs replaces the viewport content with the selected target's
+// accumulated log buffer and scrolls to the bottom.
+func (m *Model) loadSelectedLogs() {
+	if len(m.targets) == 0 {
+		return
+	}
+	name := m.targets[m.selected].Name
+	buf, ok := m.logs[name]
+	if !ok {
+		m.viewport.SetContent("")
+		return
+	}
+	m.viewport.SetContent(buf.content())
+	m.viewport.GotoBottom()
+	m.atBottom = true
+}
+
+// ─── Status icons ─────────────────────────────────────────────────────────────
+
+// statusIcon returns a pre-ANSI-coloured icon string (for use outside lipgloss containers).
+func statusIcon(s state.Status) string {
+	switch s {
+	case state.StatusRunning:
+		return iconRunning
+	case state.StatusStopped:
+		return iconStopped
+	case state.StatusFailed:
+		return iconFailed
+	default:
+		return iconUnknown
+	}
+}
+
+// statusIconChar returns a plain single ASCII character for the status,
+// with no ANSI codes. Safe to embed inside a lipgloss Render() call without
+// confusing the container's internal width measurement.
+func statusIconChar(s state.Status) string {
+	switch s {
+	case state.StatusRunning:
+		return "*"
+	case state.StatusStopped:
+		return "-"
+	case state.StatusFailed:
+		return "!"
+	default:
+		return "?"
+	}
+}
+
+// ─── Key match helper ─────────────────────────────────────────────────────────
+
+func matchKey(msg tea.KeyMsg, binding key.Binding) bool {
+	return key.Matches(msg, binding)
+}
+
+// ─── Async action commands ────────────────────────────────────────────────────
+
+func (m Model) doRestart(name string) tea.Cmd {
+	mgr := m.manager
+	return func() tea.Msg {
+		// Use context.Background() so the restarted process is not killed
+		// when the TUI context is cancelled (e.g. user presses q).
+		if err := mgr.Restart(context.Background(), name); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("restart %s: %s", name, err)}
+		}
+		return actionResultMsg{msg: fmt.Sprintf("Restarted %s", name)}
+	}
+}
+
+func (m Model) doStop(name string) tea.Cmd {
+	mgr := m.manager
+	return func() tea.Msg {
+		if err := mgr.Stop(name); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("stop %s: %s", name, err)}
+		}
+		return actionResultMsg{msg: fmt.Sprintf("Stopped %s", name)}
+	}
+}
+
+func (m Model) doStart(name string) tea.Cmd {
+	mgr := m.manager
+	return func() tea.Msg {
+		// Use context.Background() so the process is not killed when the TUI exits.
+		if err := mgr.Start(context.Background(), name); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("start %s: %s", name, err)}
+		}
+		return actionResultMsg{msg: fmt.Sprintf("Started %s", name)}
+	}
+}
+
+func (m Model) doClear(name string) tea.Cmd {
+	mgr := m.manager
+	return func() tea.Msg {
+		if err := mgr.ClearLog(name); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("clear %s: %s", name, err)}
+		}
+		return clearLogMsg{target: name}
+	}
+}
+
+func (m Model) doDump(name string) tea.Cmd {
+	mgr := m.manager
+	dest := fmt.Sprintf("%s-%s.log", name, time.Now().Format("20060102-150405"))
+	return func() tea.Msg {
+		if err := mgr.DumpLog(name, dest); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("dump %s: %s", name, err)}
+		}
+		return actionResultMsg{msg: fmt.Sprintf("Logs dumped to %s", dest)}
+	}
+}

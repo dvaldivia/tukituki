@@ -1,0 +1,9 @@
+name: docs
+description: "Hugo documentation server"
+
+command: hugo
+workdir: documentation
+
+args:
+  - server
+  - --buildDrafts

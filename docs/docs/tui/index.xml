@@ -1,0 +1,157 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>tukituki – TUI Guide</title>
+    <link>https://dvaldivia.github.io/tukituki/docs/tui/</link>
+    <description>Recent content in TUI Guide on tukituki</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    
+	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/tui/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+      
+        
+      
+    
+    
+    <item>
+      <title>Keybindings Reference</title>
+      <link>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</guid>
+      <description>
+        
+        
+        &lt;p&gt;Quick reference for every key recognised by the tukituki TUI. Keys are case-sensitive.&lt;/p&gt;
+&lt;h2&gt;Navigation&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;navigation&#34;&gt;&lt;/span&gt;
+    &lt;a href=&#34;#navigation&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Key&lt;/th&gt;
+          &lt;th&gt;Action&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;↑&lt;/code&gt; / &lt;code&gt;k&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Move selection up in the process list.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;↓&lt;/code&gt; / &lt;code&gt;j&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Move selection down in the process list.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;Tab&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Cycle to the next process (wraps around to the top).&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;PgUp&lt;/code&gt; / &lt;code&gt;b&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Scroll the log viewport up one page.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;PgDn&lt;/code&gt; / &lt;code&gt;f&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Scroll the log viewport down one page.&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Both arrow keys and vim-style &lt;code&gt;j&lt;/code&gt;/&lt;code&gt;k&lt;/code&gt; move the process selection. Use &lt;code&gt;Tab&lt;/code&gt; to step forward through the list without leaving the home row.&lt;/p&gt;
+&lt;h2&gt;Process Control&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;process-control&#34;&gt;&lt;/span&gt;
+    &lt;a href=&#34;#process-control&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Key&lt;/th&gt;
+          &lt;th&gt;Action&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;r&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Restart the selected process.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;s&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Stop the selected process.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;S&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Start the selected process (when stopped or failed).&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;&lt;code&gt;r&lt;/code&gt; is equivalent to &lt;code&gt;s&lt;/code&gt; followed by &lt;code&gt;S&lt;/code&gt; — it stops the running process and immediately starts it again. Use &lt;code&gt;S&lt;/code&gt; (uppercase) to start a process that was previously stopped with &lt;code&gt;s&lt;/code&gt; or that exited with a failure (&lt;code&gt;!&lt;/code&gt;).&lt;/p&gt;
+&lt;h2&gt;Log Management&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;log-management&#34;&gt;&lt;/span&gt;
+    &lt;a href=&#34;#log-management&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Key&lt;/th&gt;
+          &lt;th&gt;Action&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;d&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Dump the log buffer to &lt;code&gt;&amp;lt;name&amp;gt;-YYYYMMDD-HHMMSS.log&lt;/code&gt; in the current working directory.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;c&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Clear the in-memory log buffer and truncate the on-disk log file.&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;&lt;code&gt;d&lt;/code&gt; writes a point-in-time snapshot of the last 1 000 lines to a timestamped file and leaves the live buffer untouched. &lt;code&gt;c&lt;/code&gt; is a clean-slate operation — it wipes both the screen buffer and the underlying file, which is useful immediately after a restart when you want only fresh output.&lt;/p&gt;
+&lt;h2&gt;Exiting&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;exiting&#34;&gt;&lt;/span&gt;
+    &lt;a href=&#34;#exiting&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Key&lt;/th&gt;
+          &lt;th&gt;Action&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;q&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Detach — close the TUI, leave all processes running.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;Q&lt;/code&gt; / &lt;code&gt;Ctrl+C&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Stop all processes and exit.&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Prefer &lt;code&gt;q&lt;/code&gt; when you just want to close the window and come back later. Run &lt;code&gt;tukituki&lt;/code&gt; again in the same directory to reattach and resume tailing logs. Use &lt;code&gt;Q&lt;/code&gt; or &lt;code&gt;Ctrl+C&lt;/code&gt; only when you want to shut everything down.&lt;/p&gt;
+&lt;h2&gt;Status Icons&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;status-icons&#34;&gt;&lt;/span&gt;
+    &lt;a href=&#34;#status-icons&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The left panel prefixes each process name with a status icon:&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Icon&lt;/th&gt;
+          &lt;th&gt;Meaning&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;*&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Running — the process is active.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;-&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Stopped — the process was stopped cleanly.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;!&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Failed — the process exited with a non-zero exit code.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;?&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;Unknown — no state recorded yet.&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Icons refresh every second. A &lt;code&gt;!&lt;/code&gt; icon means the process needs attention; press &lt;code&gt;S&lt;/code&gt; to restart it or check the log panel for the error output.&lt;/p&gt;
+
+      </description>
+    </item>
+    
+  </channel>
+</rss>
