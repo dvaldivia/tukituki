@@ -2,38 +2,38 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/guides/cleanup/</loc>
+    <loc>http://localhost:1313/tukituki/docs/guides/cleanup/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/getting-started/</loc>
+    <loc>http://localhost:1313/tukituki/docs/getting-started/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/cli/headless/</loc>
+    <loc>http://localhost:1313/tukituki/docs/cli/headless/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</loc>
+    <loc>http://localhost:1313/tukituki/docs/getting-started/installation/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</loc>
+    <loc>http://localhost:1313/tukituki/docs/tui/keybindings/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</loc>
+    <loc>http://localhost:1313/tukituki/docs/configuration/run-targets/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</loc>
+    <loc>http://localhost:1313/tukituki/docs/configuration/config-file/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/configuration/</loc>
+    <loc>http://localhost:1313/tukituki/docs/configuration/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</loc>
+    <loc>http://localhost:1313/tukituki/docs/getting-started/quick-start/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/guides/state-persistence/</loc>
+    <loc>http://localhost:1313/tukituki/docs/guides/state-persistence/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/tui/</loc>
+    <loc>http://localhost:1313/tukituki/docs/tui/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/cli/</loc>
+    <loc>http://localhost:1313/tukituki/docs/cli/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/guides/</loc>
+    <loc>http://localhost:1313/tukituki/docs/guides/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/categories/</loc>
+    <loc>http://localhost:1313/tukituki/categories/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/docs/</loc>
+    <loc>http://localhost:1313/tukituki/docs/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/tags/</loc>
+    <loc>http://localhost:1313/tukituki/tags/</loc>
   </url><url>
-    <loc>https://dvaldivia.github.io/tukituki/</loc>
+    <loc>http://localhost:1313/tukituki/</loc>
   </url>
 </urlset>

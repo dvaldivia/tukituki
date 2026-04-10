@@ -3,20 +3,24 @@ title: Installation
 weight: 1
 ---
 
-## Prerequisites
+## Homebrew (macOS and Linux)
 
-- **Go 1.21 or later** — tukituki is distributed as a Go module. Install Go from [go.dev/dl](https://go.dev/dl/).
-
-Verify your Go version:
+The easiest way to install on macOS and Linux:
 
 ```sh
-go version
-# go version go1.21.0 darwin/arm64 (or similar)
+brew tap dvaldivia/tukituki
+brew install tukituki
+```
+
+To upgrade to the latest release:
+
+```sh
+brew upgrade tukituki
 ```
 
 ## Install via go install
 
-The fastest way to install tukituki is directly from the module path:
+Requires **Go 1.21 or later** — install from [go.dev/dl](https://go.dev/dl/).
 
 ```sh
 go install github.com/dvaldivia/tukituki/cmd/tukituki@latest
