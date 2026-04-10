@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tukituki – Documentation</title>
-    <link>https://dvaldivia.github.io/tukituki/docs/</link>
+    <link>http://localhost:1313/tukituki/docs/</link>
     <description>Recent content in Documentation on tukituki</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     
-	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="http://localhost:1313/tukituki/docs/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Cleanup Commands</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/guides/cleanup/</link>
+      <link>http://localhost:1313/tukituki/docs/guides/cleanup/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/guides/cleanup/</guid>
+      <guid>http://localhost:1313/tukituki/docs/guides/cleanup/</guid>
       <description>
         
         
@@ -195,10 +195,10 @@
     
     <item>
       <title>Headless Mode</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/cli/headless/</link>
+      <link>http://localhost:1313/tukituki/docs/cli/headless/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/cli/headless/</guid>
+      <guid>http://localhost:1313/tukituki/docs/cli/headless/</guid>
       <description>
         
         
@@ -518,10 +518,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Installation</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</link>
+      <link>http://localhost:1313/tukituki/docs/getting-started/installation/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</guid>
+      <guid>http://localhost:1313/tukituki/docs/getting-started/installation/</guid>
       <description>
         
         
@@ -631,10 +631,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Keybindings Reference</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</link>
+      <link>http://localhost:1313/tukituki/docs/tui/keybindings/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</guid>
+      <guid>http://localhost:1313/tukituki/docs/tui/keybindings/</guid>
       <description>
         
         
@@ -770,10 +770,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Run Target Reference</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</link>
+      <link>http://localhost:1313/tukituki/docs/configuration/run-targets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</guid>
+      <guid>http://localhost:1313/tukituki/docs/configuration/run-targets/</guid>
       <description>
         
         
@@ -974,10 +974,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Config File &amp; Flags</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</link>
+      <link>http://localhost:1313/tukituki/docs/configuration/config-file/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</guid>
+      <guid>http://localhost:1313/tukituki/docs/configuration/config-file/</guid>
       <description>
         
         
@@ -1101,10 +1101,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Quick Start</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</link>
+      <link>http://localhost:1313/tukituki/docs/getting-started/quick-start/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</guid>
+      <guid>http://localhost:1313/tukituki/docs/getting-started/quick-start/</guid>
       <description>
         
         
@@ -1220,10 +1220,10 @@ Press **`Q`** (capital Q) or **`Ctrl+C`** to stop all managed processes and exit
     
     <item>
       <title>State &amp; Log Persistence</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/guides/state-persistence/</link>
+      <link>http://localhost:1313/tukituki/docs/guides/state-persistence/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/guides/state-persistence/</guid>
+      <guid>http://localhost:1313/tukituki/docs/guides/state-persistence/</guid>
       <description>
         
         
