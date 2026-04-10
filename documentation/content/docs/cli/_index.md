@@ -47,6 +47,34 @@ tukituki --run-dir services/run
 
 ---
 
+## `tukituki list`
+
+```sh
+tukituki list [--config <path>] [--run-dir <dir>]
+```
+
+Print a tabular summary of all configured run targets and exit. Unlike `tukituki status`, this command reads only the YAML definitions in `--run-dir` — it does not inspect runtime state or require a state directory.
+
+**Output columns**
+
+| Column | Description |
+|--------|-------------|
+| `NAME` | Target name as defined in the YAML file |
+| `COMMAND` | Executable that will be run |
+| `DESCRIPTION` | Human-readable description from the YAML definition, if present |
+
+**Example**
+
+```sh
+tukituki list
+# NAME        COMMAND   DESCRIPTION
+# api         go        HTTP API server
+# frontend    npm       React dev server
+# worker      go        Background job processor
+```
+
+---
+
 ## `tukituki start`
 
 ```sh
