@@ -73,6 +73,7 @@ func init() {
 
 	// Register subcommands.
 	rootCmd.AddCommand(
+		newListCmd(),
 		newStartCmd(),
 		newStopCmd(),
 		newRestartCmd(),
@@ -373,6 +374,33 @@ func newStatusCmd() *cobra.Command {
 					desc = "-"
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\n", t.Name, status, desc)
+			}
+			return w.Flush()
+		},
+	}
+}
+
+// -------------------------------------------------------------------------
+// `tukituki list`
+// -------------------------------------------------------------------------
+
+func newListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all configured run targets",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			targets := loadTargetsOrDie(resolveRunDir())
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+			fmt.Fprintln(w, "NAME\tCOMMAND\tDESCRIPTION")
+			fmt.Fprintln(w, "----\t-------\t-----------")
+			for _, t := range targets {
+				desc := t.Description
+				if desc == "" {
+					desc = "-"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", t.Name, t.Command, desc)
 			}
 			return w.Flush()
 		},
