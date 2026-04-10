@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -194,7 +195,9 @@ func exitError(msg string, extra map[string]any) {
 }
 
 // loadTargetsOrDie loads run targets, printing a helpful error on failure.
-func loadTargetsOrDie(runDirPath string) []config.RunTarget {
+// It also loads a .env file from projectRoot (if present) and expands
+// ${VAR} references in each target's env values.
+func loadTargetsOrDie(runDirPath, projectRoot string) []config.RunTarget {
 	targets, err := config.LoadTargets(runDirPath)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
@@ -206,7 +209,11 @@ func loadTargetsOrDie(runDirPath string) []config.RunTarget {
 			exitError(fmt.Sprintf("loading targets: %v", err), nil)
 		}
 	}
-	return targets
+	dotenv, err := config.ParseDotEnv(filepath.Join(projectRoot, ".env"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not parse .env: %v\n", err)
+	}
+	return config.ExpandEnv(targets, dotenv)
 }
 
 // findTarget returns the named target or exits with an error listing available names.
@@ -282,10 +289,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	runDirPath := resolveRunDir()
 	stateDirPath := resolveStateDir()
+	projectRoot := resolveProjectRoot()
 
-	targets := loadTargetsOrDie(runDirPath)
+	targets := loadTargetsOrDie(runDirPath, projectRoot)
 
-	mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+	mgr := newManagerOrDie(targets, stateDirPath, projectRoot)
 
 	// Attach to any processes already running from a previous tukituki session.
 	if err := mgr.AttachToExisting(); err != nil {
@@ -337,7 +345,7 @@ Use --json for machine-readable output.`,
   tukituki list --json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targets := loadTargetsOrDie(resolveRunDir())
+			targets := loadTargetsOrDie(resolveRunDir(), resolveProjectRoot())
 
 			if jsonOutput {
 				entries := make([]listEntry, len(targets))
@@ -396,9 +404,10 @@ Use --json for machine-readable output.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
+			projectRoot := resolveProjectRoot()
 
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+			targets := loadTargetsOrDie(runDirPath, projectRoot)
+			mgr := newManagerOrDie(targets, stateDirPath, projectRoot)
 
 			if err := mgr.AttachToExisting(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
@@ -480,9 +489,10 @@ Use --json for machine-readable output.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
+			projectRoot := resolveProjectRoot()
 
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+			targets := loadTargetsOrDie(runDirPath, projectRoot)
+			mgr := newManagerOrDie(targets, stateDirPath, projectRoot)
 
 			ctx := context.Background()
 
@@ -556,9 +566,10 @@ Use --json for machine-readable output.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
+			projectRoot := resolveProjectRoot()
 
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+			targets := loadTargetsOrDie(runDirPath, projectRoot)
+			mgr := newManagerOrDie(targets, stateDirPath, projectRoot)
 
 			if err := mgr.AttachToExisting(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
@@ -614,9 +625,10 @@ Use --json for machine-readable output.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
+			projectRoot := resolveProjectRoot()
 
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+			targets := loadTargetsOrDie(runDirPath, projectRoot)
+			mgr := newManagerOrDie(targets, stateDirPath, projectRoot)
 
 			if err := mgr.AttachToExisting(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
@@ -664,9 +676,10 @@ and AI agents).  Use --tail to control how many buffered lines are shown.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
+			projectRoot := resolveProjectRoot()
 
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+			targets := loadTargetsOrDie(runDirPath, projectRoot)
+			mgr := newManagerOrDie(targets, stateDirPath, projectRoot)
 
 			if err := mgr.AttachToExisting(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
