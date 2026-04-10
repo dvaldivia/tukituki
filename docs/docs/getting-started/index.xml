@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tukituki – Getting Started</title>
-    <link>http://localhost:1313/tukituki/docs/getting-started/</link>
+    <link>https://dvaldivia.github.io/tukituki/docs/getting-started/</link>
     <description>Recent content in Getting Started on tukituki</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     
-	  <atom:link href="http://localhost:1313/tukituki/docs/getting-started/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/getting-started/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Installation</title>
-      <link>http://localhost:1313/tukituki/docs/getting-started/installation/</link>
+      <link>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>http://localhost:1313/tukituki/docs/getting-started/installation/</guid>
+      <guid>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</guid>
       <description>
         
         
@@ -129,10 +129,10 @@
     
     <item>
       <title>Quick Start</title>
-      <link>http://localhost:1313/tukituki/docs/getting-started/quick-start/</link>
+      <link>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>http://localhost:1313/tukituki/docs/getting-started/quick-start/</guid>
+      <guid>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</guid>
       <description>
         
         
@@ -151,20 +151,28 @@ Every `.yaml` file placed here defines one managed process.
 
 ### Write your first process definition
 
-Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project:
+The fastest way is to use the `new` command:
+
+```sh
+tukituki new api &#39;go run ./cmd/api/&#39; -e PORT=8080 -e ENV=development
+```
+
+This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project:
 
 ```yaml
 name: api
-cmd: go run ./cmd/api/
-cwd: .
+command: go
+args:
+  - run
+  - ./cmd/api/
 env:
   PORT: &#34;8080&#34;
   ENV: development
 ```
 
 - `name` — display name shown in the TUI and used for the log file.
-- `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
-- `cwd` — working directory relative to the project root.
+- `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
+- `args` — positional arguments passed to `command`.
 - `env` — additional environment variables merged into the process environment.
 
 You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`).

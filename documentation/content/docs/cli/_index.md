@@ -47,6 +47,57 @@ tukituki --run-dir services/run
 
 ---
 
+## `tukituki new`
+
+```sh
+tukituki new <name> '<command> [args...]' [-e KEY=VALUE]... [-w <dir>]
+```
+
+Create a new `.run/<name>.yaml` file from a name and command string. The command string is split on whitespace — the first token becomes `command` and the rest become `args`. The `.run/` directory is created automatically if it does not already exist.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `-e`, `--env KEY=VALUE` | Add an environment variable (repeatable) |
+| `-w`, `--workdir <dir>` | Set the working directory, relative to the project root |
+
+{{< callout type="warning" >}}
+`tukituki new` refuses to overwrite an existing file. If `.run/<name>.yaml` already exists, the command exits with an error.
+{{< /callout >}}
+
+**Examples**
+
+```sh
+# Create a simple run target
+tukituki new api 'go run ./cmd/api -port 8080'
+
+# With environment variables
+tukituki new worker 'node worker.js' -e PORT=3000 -e DEBUG=true
+
+# With a working directory
+tukituki new docs 'hugo server --buildDrafts' -w documentation
+
+# Combine all options
+tukituki new server 'go run ./cmd/server' -w backend -e HTTP_PORT=8182 -e GRPC_PORT=9192
+```
+
+The last example produces `.run/server.yaml`:
+
+```yaml
+name: server
+command: go
+workdir: backend
+args:
+  - run
+  - ./cmd/server
+env:
+  HTTP_PORT: "8182"
+  GRPC_PORT: "9192"
+```
+
+---
+
 ## `tukituki list`
 
 ```sh

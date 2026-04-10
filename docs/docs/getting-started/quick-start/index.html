@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr"><head><script src="/tukituki/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=tukituki/livereload" data-no-instant defer></script>
+<html lang="en" dir="ltr"><head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="noindex, nofollow" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="index, follow" />
   <link rel="icon shortcut" href="/tukituki/favicon.ico" sizes="32x32" />
 <link rel="icon" href="/tukituki/favicon.svg" type="image/svg+xml" id="favicon-svg" />
 <link rel="icon" href="/tukituki/favicon-16x16.png" type="image/png" sizes="16x16" />
@@ -10,7 +10,7 @@
 <link fetchpriority="low" href="/tukituki/site.webmanifest" rel="manifest" />
 <title>Quick Start – tukituki</title>
   <meta name="description" content="This guide takes you from zero to a running process in under five minutes. You will create a process definition, launch tukituki, and learn the essential keyboard shortcuts.
-### Create a `.run/` directory Inside your project root, create the directory where tukituki looks for process definitions: ```sh mkdir .run ``` Every `.yaml` file placed here defines one managed process. ### Write your first process definition Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project: ```yaml name: api cmd: go run ./cmd/api/ cwd: . env: PORT: &#34;8080&#34; ENV: development ``` - `name` — display name shown in the TUI and used for the log file. - `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available). - `cwd` — working directory relative to the project root. - `env` — additional environment variables merged into the process environment. You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`). ### Start tukituki From your project root, run: ```sh tukituki ``` The TUI opens in your terminal and all processes defined in `.run/` start automatically. Each process appears as a row showing its name and current status. ### Navigate and view logs Use the keyboard to move around the TUI: | Key | Action | |-----|--------| | `↑` / `↓` | Move selection between processes | | `Enter` | Open the log pane for the selected process | | `Esc` | Close the log pane | Live log output streams in real time. Logs are also written to `.tukituki/logs/.log` so you can inspect them later with any tool. ### Detach — leave processes running Press **`q`** to close the TUI and return to your shell prompt. All managed processes continue running in the background. Their state is tracked in `.tukituki/state.json`. Reopen the TUI at any time by running `tukituki` again from the same project root. ### Stop everything Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and exit tukituki. tukituki stores runtime state and logs under .tukituki/ in your project root. Add this directory to your .gitignore so it is never committed:" /><link rel="canonical" href="http://localhost:1313/tukituki/docs/getting-started/quick-start/" itemprop="url" />
+### Create a `.run/` directory Inside your project root, create the directory where tukituki looks for process definitions: ```sh mkdir .run ``` Every `.yaml` file placed here defines one managed process. ### Write your first process definition The fastest way is to use the `new` command: ```sh tukituki new api &#39;go run ./cmd/api/&#39; -e PORT=8080 -e ENV=development ``` This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project: ```yaml name: api command: go args: - run - ./cmd/api/ env: PORT: &#34;8080&#34; ENV: development ``` - `name` — display name shown in the TUI and used for the log file. - `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available). - `args` — positional arguments passed to `command`. - `env` — additional environment variables merged into the process environment. You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`). ### Start tukituki From your project root, run: ```sh tukituki ``` The TUI opens in your terminal and all processes defined in `.run/` start automatically. Each process appears as a row showing its name and current status. ### Navigate and view logs Use the keyboard to move around the TUI: | Key | Action | |-----|--------| | `↑` / `↓` | Move selection between processes | | `Enter` | Open the log pane for the selected process | | `Esc` | Close the log pane | Live log output streams in real time. Logs are also written to `.tukituki/logs/.log` so you can inspect them later with any tool. ### Detach — leave processes running Press **`q`** to close the TUI and return to your shell prompt. All managed processes continue running in the background. Their state is tracked in `.tukituki/state.json`. Reopen the TUI at any time by running `tukituki` again from the same project root. ### Stop everything Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and exit tukituki. tukituki stores runtime state and logs under .tukituki/ in your project root. Add this directory to your .gitignore so it is never committed:" /><link rel="canonical" href="https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/" itemprop="url" />
 
 <meta property="og:title" content="Quick Start">
 <meta
@@ -32,20 +32,28 @@ Every `.yaml` file placed here defines one managed process.
 
 ### Write your first process definition
 
-Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project:
+The fastest way is to use the `new` command:
+
+```sh
+tukituki new api &#39;go run ./cmd/api/&#39; -e PORT=8080 -e ENV=development
+```
+
+This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project:
 
 ```yaml
 name: api
-cmd: go run ./cmd/api/
-cwd: .
+command: go
+args:
+  - run
+  - ./cmd/api/
 env:
   PORT: &#34;8080&#34;
   ENV: development
 ```
 
 - `name` — display name shown in the TUI and used for the log file.
-- `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
-- `cwd` — working directory relative to the project root.
+- `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
+- `args` — positional arguments passed to `command`.
 - `env` — additional environment variables merged into the process environment.
 
 You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`).
@@ -96,25 +104,31 @@ Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and 
   content="
     article
   ">
-<meta property="og:url" content="http://localhost:1313/tukituki/docs/getting-started/quick-start/"><meta property="article:section" content="docs">
+<meta property="og:url" content="https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/"><meta property="article:section" content="docs">
 
 
 
 
   <meta itemprop="name" content="Quick Start">
   <meta itemprop="description" content="This guide takes you from zero to a running process in under five minutes. You will create a process definition, launch tukituki, and learn the essential keyboard shortcuts.
-### Create a `.run/` directory Inside your project root, create the directory where tukituki looks for process definitions: ```sh mkdir .run ``` Every `.yaml` file placed here defines one managed process. ### Write your first process definition Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project: ```yaml name: api cmd: go run ./cmd/api/ cwd: . env: PORT: &#34;8080&#34; ENV: development ``` - `name` — display name shown in the TUI and used for the log file. - `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available). - `cwd` — working directory relative to the project root. - `env` — additional environment variables merged into the process environment. You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`). ### Start tukituki From your project root, run: ```sh tukituki ``` The TUI opens in your terminal and all processes defined in `.run/` start automatically. Each process appears as a row showing its name and current status. ### Navigate and view logs Use the keyboard to move around the TUI: | Key | Action | |-----|--------| | `↑` / `↓` | Move selection between processes | | `Enter` | Open the log pane for the selected process | | `Esc` | Close the log pane | Live log output streams in real time. Logs are also written to `.tukituki/logs/.log` so you can inspect them later with any tool. ### Detach — leave processes running Press **`q`** to close the TUI and return to your shell prompt. All managed processes continue running in the background. Their state is tracked in `.tukituki/state.json`. Reopen the TUI at any time by running `tukituki` again from the same project root. ### Stop everything Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and exit tukituki. tukituki stores runtime state and logs under .tukituki/ in your project root. Add this directory to your .gitignore so it is never committed:">
-  <meta itemprop="wordCount" content="407">
+### Create a `.run/` directory Inside your project root, create the directory where tukituki looks for process definitions: ```sh mkdir .run ``` Every `.yaml` file placed here defines one managed process. ### Write your first process definition The fastest way is to use the `new` command: ```sh tukituki new api &#39;go run ./cmd/api/&#39; -e PORT=8080 -e ENV=development ``` This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project: ```yaml name: api command: go args: - run - ./cmd/api/ env: PORT: &#34;8080&#34; ENV: development ``` - `name` — display name shown in the TUI and used for the log file. - `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available). - `args` — positional arguments passed to `command`. - `env` — additional environment variables merged into the process environment. You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`). ### Start tukituki From your project root, run: ```sh tukituki ``` The TUI opens in your terminal and all processes defined in `.run/` start automatically. Each process appears as a row showing its name and current status. ### Navigate and view logs Use the keyboard to move around the TUI: | Key | Action | |-----|--------| | `↑` / `↓` | Move selection between processes | | `Enter` | Open the log pane for the selected process | | `Esc` | Close the log pane | Live log output streams in real time. Logs are also written to `.tukituki/logs/.log` so you can inspect them later with any tool. ### Detach — leave processes running Press **`q`** to close the TUI and return to your shell prompt. All managed processes continue running in the background. Their state is tracked in `.tukituki/state.json`. Reopen the TUI at any time by running `tukituki` again from the same project root. ### Stop everything Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and exit tukituki. tukituki stores runtime state and logs under .tukituki/ in your project root. Add this directory to your .gitignore so it is never committed:">
+  <meta itemprop="wordCount" content="437">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Quick Start">
   <meta name="twitter:description" content="This guide takes you from zero to a running process in under five minutes. You will create a process definition, launch tukituki, and learn the essential keyboard shortcuts.
-### Create a `.run/` directory Inside your project root, create the directory where tukituki looks for process definitions: ```sh mkdir .run ``` Every `.yaml` file placed here defines one managed process. ### Write your first process definition Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project: ```yaml name: api cmd: go run ./cmd/api/ cwd: . env: PORT: &#34;8080&#34; ENV: development ``` - `name` — display name shown in the TUI and used for the log file. - `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available). - `cwd` — working directory relative to the project root. - `env` — additional environment variables merged into the process environment. You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`). ### Start tukituki From your project root, run: ```sh tukituki ``` The TUI opens in your terminal and all processes defined in `.run/` start automatically. Each process appears as a row showing its name and current status. ### Navigate and view logs Use the keyboard to move around the TUI: | Key | Action | |-----|--------| | `↑` / `↓` | Move selection between processes | | `Enter` | Open the log pane for the selected process | | `Esc` | Close the log pane | Live log output streams in real time. Logs are also written to `.tukituki/logs/.log` so you can inspect them later with any tool. ### Detach — leave processes running Press **`q`** to close the TUI and return to your shell prompt. All managed processes continue running in the background. Their state is tracked in `.tukituki/state.json`. Reopen the TUI at any time by running `tukituki` again from the same project root. ### Stop everything Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and exit tukituki. tukituki stores runtime state and logs under .tukituki/ in your project root. Add this directory to your .gitignore so it is never committed:">
-<link href="/tukituki/css/compiled/main.css" rel="stylesheet" />
-    <link href="/tukituki/css/variables.css" rel="stylesheet" />
-    <link href="/tukituki/css/custom.css" rel="stylesheet" />
+### Create a `.run/` directory Inside your project root, create the directory where tukituki looks for process definitions: ```sh mkdir .run ``` Every `.yaml` file placed here defines one managed process. ### Write your first process definition The fastest way is to use the `new` command: ```sh tukituki new api &#39;go run ./cmd/api/&#39; -e PORT=8080 -e ENV=development ``` This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project: ```yaml name: api command: go args: - run - ./cmd/api/ env: PORT: &#34;8080&#34; ENV: development ``` - `name` — display name shown in the TUI and used for the log file. - `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available). - `args` — positional arguments passed to `command`. - `env` — additional environment variables merged into the process environment. You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`). ### Start tukituki From your project root, run: ```sh tukituki ``` The TUI opens in your terminal and all processes defined in `.run/` start automatically. Each process appears as a row showing its name and current status. ### Navigate and view logs Use the keyboard to move around the TUI: | Key | Action | |-----|--------| | `↑` / `↓` | Move selection between processes | | `Enter` | Open the log pane for the selected process | | `Esc` | Close the log pane | Live log output streams in real time. Logs are also written to `.tukituki/logs/.log` so you can inspect them later with any tool. ### Detach — leave processes running Press **`q`** to close the TUI and return to your shell prompt. All managed processes continue running in the background. Their state is tracked in `.tukituki/state.json`. Reopen the TUI at any time by running `tukituki` again from the same project root. ### Stop everything Press **`Q`** (capital Q) or **`Ctrl&#43;C`** to stop all managed processes and exit tukituki. tukituki stores runtime state and logs under .tukituki/ in your project root. Add this directory to your .gitignore so it is never committed:">
+
+    <link rel="preload" href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" as="style" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
+    <link href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" rel="stylesheet" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
 
   
-<script src="/tukituki/js/main-head.js" integrity=""></script>
+
+
+
+
+
+
+<script src="/tukituki/js/main-head.min.94da6f95b126542222dab3a6e07ffefe1aaf63ec3ca555e827b58b80e7d3f0b7.js" integrity="sha256-lNpvlbEmVCIi2rOm4H/&#43;/hqvY&#43;w8pVXoJ7WLgOfT8Lc="></script>
 
   
   
@@ -459,20 +473,28 @@ Every `.yaml` file placed here defines one managed process.
 
 ### Write your first process definition
 
-Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project:
+The fastest way is to use the `new` command:
+
+```sh
+tukituki new api 'go run ./cmd/api/' -e PORT=8080 -e ENV=development
+```
+
+This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project:
 
 ```yaml
 name: api
-cmd: go run ./cmd/api/
-cwd: .
+command: go
+args:
+  - run
+  - ./cmd/api/
 env:
   PORT: "8080"
   ENV: development
 ```
 
 - `name` — display name shown in the TUI and used for the log file.
-- `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
-- `cwd` — working directory relative to the project root.
+- `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
+- `args` — positional arguments passed to `command`.
 - `env` — additional environment variables merged into the process environment.
 
 You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`).
@@ -569,7 +591,7 @@ Press **`Q`** (capital Q) or **`Ctrl+C`** to stop all managed processes and exit
   </a></div><div class="hx:mt-6 hx:text-xs">© 2025 Hextra Project.</div></div>
     </div></footer>
     
-    <script defer src="/tukituki/js/main.js" integrity=""></script>
-<script defer src="/tukituki/js/flexsearch.9f5b5908f93ae86f1ecd4b043b799f580c2d1654e703dd9357d568ac41b2547a.js" integrity="sha256-n1tZCPk66G8ezUsEO3mfWAwtFlTnA92TV9VorEGyVHo=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.js" integrity=""></script>
+    <script defer src="/tukituki/js/main.min.a03bf8dbdb527a767062c81d3a2fc5a91c71d0ea086ac4eac110bc9cbb4f380b.js" integrity="sha256-oDv429tSenZwYsgdOi/FqRxx0OoIasTqwRC8nLtPOAs="></script>
+<script defer src="/tukituki/js/flexsearch.433e941a8a573ebb9931fc16fc75266ab6b93f569ac2fb4f3dc66882e0416f4c.js" integrity="sha256-Qz6UGopXPruZMfwW/HUmara5P1aawvtPPcZoguBBb0w=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.min.9b5d3e9fc67ab4ea992026c85954736a0ac782b3a3c2f6829d00778ec91920c3.js" integrity="sha256-m10&#43;n8Z6tOqZICbIWVRzagrHgrOjwvaCnQB3jskZIMM="></script>
   </body>
 </html>

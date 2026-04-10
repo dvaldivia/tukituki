@@ -101,6 +101,7 @@ func init() {
 	// Register subcommands.
 	rootCmd.AddCommand(
 		newVersionCmd(),
+		newNewCmd(),
 		newListCmd(),
 		newStartCmd(),
 		newStopCmd(),
@@ -319,6 +320,96 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// -------------------------------------------------------------------------
+// `tukituki new <name> '<command> [args...]'`
+// -------------------------------------------------------------------------
+
+func newNewCmd() *cobra.Command {
+	var envVars []string
+	var workdir string
+
+	cmd := &cobra.Command{
+		Use:   "new <name> '<command> [args...]'",
+		Short: "Create a new run target YAML file",
+		Long: `Create a new .run/<name>.yaml file from the given name and command.
+
+The command string is split into the program and its arguments.
+Environment variables can be passed with -e KEY=VALUE (repeatable).
+Use -w to set a working directory (relative to the project root).`,
+		Example: `  tukituki new api 'go run ./cmd/api -port 8080'
+  tukituki new worker 'node worker.js' -e PORT=3000 -e DEBUG=true
+  tukituki new docs 'hugo server' -w documentation`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			cmdStr := args[1]
+
+			parts := strings.Fields(cmdStr)
+			if len(parts) == 0 {
+				return fmt.Errorf("command string is empty")
+			}
+
+			runDirPath := resolveRunDir()
+
+			// Ensure .run/ directory exists.
+			if err := os.MkdirAll(runDirPath, 0o755); err != nil {
+				return fmt.Errorf("create run directory: %w", err)
+			}
+
+			filePath := filepath.Join(runDirPath, name+".yaml")
+
+			// Don't overwrite an existing file.
+			if _, err := os.Stat(filePath); err == nil {
+				return fmt.Errorf("file already exists: %s", filePath)
+			}
+
+			// Build the YAML content.
+			var buf strings.Builder
+			buf.WriteString(fmt.Sprintf("name: %s\n", name))
+			buf.WriteString(fmt.Sprintf("command: %s\n", parts[0]))
+			if workdir != "" {
+				buf.WriteString(fmt.Sprintf("workdir: %s\n", workdir))
+			}
+			if len(parts) > 1 {
+				buf.WriteString("args:\n")
+				for _, a := range parts[1:] {
+					buf.WriteString(fmt.Sprintf("  - %s\n", a))
+				}
+			}
+			if len(envVars) > 0 {
+				buf.WriteString("env:\n")
+				for _, e := range envVars {
+					k, v, ok := strings.Cut(e, "=")
+					if !ok {
+						return fmt.Errorf("invalid env var format %q (expected KEY=VALUE)", e)
+					}
+					buf.WriteString(fmt.Sprintf("  %s: %q\n", k, v))
+				}
+			}
+
+			if err := os.WriteFile(filePath, []byte(buf.String()), 0o644); err != nil {
+				return fmt.Errorf("write file: %w", err)
+			}
+
+			if jsonOutput {
+				return writeJSON(map[string]string{
+					"file": filePath,
+					"name": name,
+				})
+			}
+			fmt.Printf("Created %s\n", filePath)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil,
+		"environment variable in KEY=VALUE format (repeatable)")
+	cmd.Flags().StringVarP(&workdir, "workdir", "w", "",
+		"working directory relative to project root")
+
+	return cmd
 }
 
 // -------------------------------------------------------------------------

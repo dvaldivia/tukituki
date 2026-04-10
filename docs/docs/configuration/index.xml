@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tukituki – Configuration</title>
-    <link>http://localhost:1313/tukituki/docs/configuration/</link>
+    <link>https://dvaldivia.github.io/tukituki/docs/configuration/</link>
     <description>Recent content in Configuration on tukituki</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     
-	  <atom:link href="http://localhost:1313/tukituki/docs/configuration/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/configuration/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Run Target Reference</title>
-      <link>http://localhost:1313/tukituki/docs/configuration/run-targets/</link>
+      <link>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>http://localhost:1313/tukituki/docs/configuration/run-targets/</guid>
+      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</guid>
       <description>
         
         
@@ -220,10 +220,10 @@
     
     <item>
       <title>Config File &amp; Flags</title>
-      <link>http://localhost:1313/tukituki/docs/configuration/config-file/</link>
+      <link>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>http://localhost:1313/tukituki/docs/configuration/config-file/</guid>
+      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</guid>
       <description>
         
         

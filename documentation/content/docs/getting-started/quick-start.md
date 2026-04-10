@@ -19,20 +19,28 @@ Every `.yaml` file placed here defines one managed process.
 
 ### Write your first process definition
 
-Create `.run/api.yaml` with the following content, adjusting the `cmd` to match your project:
+The fastest way is to use the `new` command:
+
+```sh
+tukituki new api 'go run ./cmd/api/' -e PORT=8080 -e ENV=development
+```
+
+This creates `.run/api.yaml` for you. You can also create the file by hand with the following content, adjusting the command to match your project:
 
 ```yaml
 name: api
-cmd: go run ./cmd/api/
-cwd: .
+command: go
+args:
+  - run
+  - ./cmd/api/
 env:
   PORT: "8080"
   ENV: development
 ```
 
 - `name` — display name shown in the TUI and used for the log file.
-- `cmd` — the shell command to run (executed via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
-- `cwd` — working directory relative to the project root.
+- `command` — the executable to run (resolved via your login shell, so `$PATH` from nvm/pyenv/rbenv is available).
+- `args` — positional arguments passed to `command`.
 - `env` — additional environment variables merged into the process environment.
 
 You can add as many `.yaml` files as you have processes (e.g. `.run/worker.yaml`, `.run/frontend.yaml`).
