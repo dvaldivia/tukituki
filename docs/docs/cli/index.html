@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr"><head><script src="/tukituki/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=tukituki/livereload" data-no-instant defer></script>
+<html lang="en" dir="ltr"><head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="noindex, nofollow" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="index, follow" />
   <link rel="icon shortcut" href="/tukituki/favicon.ico" sizes="32x32" />
 <link rel="icon" href="/tukituki/favicon.svg" type="image/svg+xml" id="favicon-svg" />
 <link rel="icon" href="/tukituki/favicon-16x16.png" type="image/png" sizes="16x16" />
@@ -11,7 +11,7 @@
 <title>CLI Reference – tukituki</title>
   <meta name="description" content="tukituki exposes a small, focused command surface. The default invocation opens the interactive TUI; subcommands let you drive the same lifecycle from scripts, CI pipelines, or a plain terminal session.
 Global Flags These flags are accepted by every command, including the root tukituki invocation.
-Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Path to a configuration file --run-dir string .run Directory containing YAML process definitions --state-dir string .tukituki Directory for state.json and per-process log files tukituki tukituki [--config &lt;path&gt;] [--run-dir &lt;dir&gt;] [--state-dir &lt;dir&gt;] Open the interactive TUI, attach to any already-running processes, and start anything that is not yet running." /><link rel="canonical" href="http://localhost:1313/tukituki/docs/cli/" itemprop="url" />
+Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Path to a configuration file --run-dir string .run Directory containing YAML process definitions --state-dir string .tukituki Directory for state.json and per-process log files tukituki tukituki [--config &lt;path&gt;] [--run-dir &lt;dir&gt;] [--state-dir &lt;dir&gt;] Open the interactive TUI, attach to any already-running processes, and start anything that is not yet running." /><link rel="canonical" href="https://dvaldivia.github.io/tukituki/docs/cli/" itemprop="url" />
 
 <meta property="og:title" content="CLI Reference">
 <meta
@@ -26,25 +26,31 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
   content="
     website
   ">
-<meta property="og:url" content="http://localhost:1313/tukituki/docs/cli/">
+<meta property="og:url" content="https://dvaldivia.github.io/tukituki/docs/cli/">
 
 
   <meta itemprop="name" content="CLI Reference">
   <meta itemprop="description" content="tukituki exposes a small, focused command surface. The default invocation opens the interactive TUI; subcommands let you drive the same lifecycle from scripts, CI pipelines, or a plain terminal session.
 Global Flags These flags are accepted by every command, including the root tukituki invocation.
 Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Path to a configuration file --run-dir string .run Directory containing YAML process definitions --state-dir string .tukituki Directory for state.json and per-process log files tukituki tukituki [--config &lt;path&gt;] [--run-dir &lt;dir&gt;] [--state-dir &lt;dir&gt;] Open the interactive TUI, attach to any already-running processes, and start anything that is not yet running.">
-  <meta itemprop="wordCount" content="807">
+  <meta itemprop="wordCount" content="1124">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="CLI Reference">
   <meta name="twitter:description" content="tukituki exposes a small, focused command surface. The default invocation opens the interactive TUI; subcommands let you drive the same lifecycle from scripts, CI pipelines, or a plain terminal session.
 Global Flags These flags are accepted by every command, including the root tukituki invocation.
 Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Path to a configuration file --run-dir string .run Directory containing YAML process definitions --state-dir string .tukituki Directory for state.json and per-process log files tukituki tukituki [--config &lt;path&gt;] [--run-dir &lt;dir&gt;] [--state-dir &lt;dir&gt;] Open the interactive TUI, attach to any already-running processes, and start anything that is not yet running.">
-<link href="/tukituki/css/compiled/main.css" rel="stylesheet" />
-    <link href="/tukituki/css/variables.css" rel="stylesheet" />
-    <link href="/tukituki/css/custom.css" rel="stylesheet" />
+
+    <link rel="preload" href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" as="style" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
+    <link href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" rel="stylesheet" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
 
   
-<script src="/tukituki/js/main-head.js" integrity=""></script>
+
+
+
+
+
+
+<script src="/tukituki/js/main-head.min.94da6f95b126542222dab3a6e07ffefe1aaf63ec3ca555e827b58b80e7d3f0b7.js" integrity="sha256-lNpvlbEmVCIi2rOm4H/&#43;/hqvY&#43;w8pVXoJ7WLgOfT8Lc="></script>
 
   
   
@@ -349,6 +355,14 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
         </a>
       </li>
       <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#tukituki-version">tukituki version
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#tukituki-list">tukituki list
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
         <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#tukituki-start">tukituki start
         </a>
       </li>
@@ -438,6 +452,11 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
           <td><code>.tukituki</code></td>
           <td>Directory for <code>state.json</code> and per-process log files</td>
       </tr>
+      <tr>
+          <td><code>--json</code></td>
+          <td><code>false</code></td>
+          <td>Emit machine-readable JSON instead of formatted text; errors are also written as JSON to stderr</td>
+      </tr>
   </tbody>
 </table>
 <hr>
@@ -466,6 +485,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 <li>On exit with <strong><code>Q</code></strong> or <strong>Ctrl+C</strong>: sends SIGTERM (then SIGKILL after 5 s) to all managed processes before returning to the shell.</li>
 </ol>
 <p>Pressing lowercase <strong><code>q</code></strong> closes the TUI while leaving processes running. Run <code>tukituki</code> again from the same directory to reattach.</p>
+<p><strong>TTY guard:</strong> If stdout is not connected to a terminal (e.g. in a script, CI pipeline, or AI agent), tukituki exits immediately with a non-zero status and prints an actionable error rather than hanging. Use a subcommand such as <code>tukituki status</code> for non-interactive use.</p>
 <p><strong>Example</strong></p>
 <div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
@@ -486,10 +506,108 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 </div>
 </div>
 <hr>
+<h2><code>tukituki version</code><span class="hx:absolute hx:-mt-20" id="tukituki-version"></span>
+    <a href="#tukituki-version" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki version <span class="o">[</span>--json<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>Print version, OS/architecture, and Go runtime information, then exit.</p>
+<p><strong>Examples</strong></p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki version
+</span></span><span class="line"><span class="cl"><span class="c1"># tukituki 1.2.0 (darwin/arm64, go1.24.2)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">tukituki version --json
+</span></span><span class="line"><span class="cl"><span class="c1"># { "version": "1.2.0", "go_version": "go1.24.2", "os": "darwin", "arch": "arm64" }</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<hr>
+<h2><code>tukituki list</code><span class="hx:absolute hx:-mt-20" id="tukituki-list"></span>
+    <a href="#tukituki-list" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki list <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--json<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>Print a tabular summary of all configured run targets and exit. Unlike <code>tukituki status</code>, this command reads only the YAML definitions in <code>--run-dir</code> — it does not inspect runtime state or require a state directory.</p>
+<p><strong>Output columns</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>Column</th>
+          <th>Description</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>NAME</code></td>
+          <td>Target name as defined in the YAML file</td>
+      </tr>
+      <tr>
+          <td><code>COMMAND</code></td>
+          <td>Executable that will be run</td>
+      </tr>
+      <tr>
+          <td><code>DESCRIPTION</code></td>
+          <td>Human-readable description from the YAML definition, if present</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Example</strong></p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki list
+</span></span><span class="line"><span class="cl"><span class="c1"># NAME        COMMAND   DESCRIPTION</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># api         go        HTTP API server</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># frontend    npm       React dev server</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># worker      go        Background job processor</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">tukituki list --json
+</span></span><span class="line"><span class="cl"><span class="c1"># [{"name":"api","command":"go","args":["run","./cmd/server"],"description":"HTTP API server","workdir":"backend"},...]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<hr>
 <h2><code>tukituki start</code><span class="hx:absolute hx:-mt-20" id="tukituki-start"></span>
     <a href="#tukituki-start" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
-<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki start <span class="o">[</span>&lt;name&gt;<span class="o">]</span> <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki start <span class="o">[</span>&lt;name&gt;<span class="o">]</span> <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--json<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -551,6 +669,10 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 </span></span><span class="line"><span class="cl"><span class="c1"># Start only the &#34;api&#34; target</span>
 </span></span><span class="line"><span class="cl">tukituki start api
 </span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># Machine-readable output</span>
+</span></span><span class="line"><span class="cl">tukituki start api --json
+</span></span><span class="line"><span class="cl"><span class="c1"># {&#34;name&#34;:&#34;api&#34;,&#34;status&#34;:&#34;running&#34;}</span>
+</span></span><span class="line"><span class="cl">
 </span></span><span class="line"><span class="cl"><span class="c1"># Start against a custom state directory</span>
 </span></span><span class="line"><span class="cl">tukituki start --state-dir /tmp/myproject-state</span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
@@ -568,7 +690,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 <h2><code>tukituki stop</code><span class="hx:absolute hx:-mt-20" id="tukituki-stop"></span>
     <a href="#tukituki-stop" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
-<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki stop <span class="o">[</span>&lt;name&gt;<span class="o">]</span> <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki stop <span class="o">[</span>&lt;name&gt;<span class="o">]</span> <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--json<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -626,7 +748,11 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 </span></span><span class="line"><span class="cl">tukituki stop
 </span></span><span class="line"><span class="cl">
 </span></span><span class="line"><span class="cl"><span class="c1"># Stop only the &#34;worker&#34; target</span>
-</span></span><span class="line"><span class="cl">tukituki stop worker</span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+</span></span><span class="line"><span class="cl">tukituki stop worker
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># Machine-readable output</span>
+</span></span><span class="line"><span class="cl">tukituki stop worker --json
+</span></span><span class="line"><span class="cl"><span class="c1"># {&#34;name&#34;:&#34;worker&#34;,&#34;status&#34;:&#34;stopped&#34;}</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -642,7 +768,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 <h2><code>tukituki restart</code><span class="hx:absolute hx:-mt-20" id="tukituki-restart"></span>
     <a href="#tukituki-restart" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
-<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki restart &lt;name&gt; <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki restart &lt;name&gt; <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--json<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -666,7 +792,11 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 <div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
 <div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="c1"># Restart the &#34;frontend&#34; target after a config change</span>
-</span></span><span class="line"><span class="cl">tukituki restart frontend</span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+</span></span><span class="line"><span class="cl">tukituki restart frontend
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># Machine-readable output</span>
+</span></span><span class="line"><span class="cl">tukituki restart frontend --json
+</span></span><span class="line"><span class="cl"><span class="c1"># {&#34;name&#34;:&#34;frontend&#34;,&#34;status&#34;:&#34;running&#34;}</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -682,7 +812,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 <h2><code>tukituki status</code><span class="hx:absolute hx:-mt-20" id="tukituki-status"></span>
     <a href="#tukituki-status" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
-<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki status <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki status <span class="o">[</span>&lt;name&gt;<span class="o">]</span> <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--json<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -694,7 +824,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
   </button>
 </div>
 </div>
-<p>Print a tabular summary of all targets and their current status, then exit.</p>
+<p>Print the current status of all targets (or a single target if <code>&lt;name&gt;</code> is given), then exit. JSON output includes the process PID when the target is running.</p>
 <p><strong>Output columns</strong></p>
 <table>
   <thead>
@@ -732,7 +862,15 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 </span></span><span class="line"><span class="cl"><span class="c1"># NAME        STATUS    DESCRIPTION</span>
 </span></span><span class="line"><span class="cl"><span class="c1"># api         running   HTTP API server</span>
 </span></span><span class="line"><span class="cl"><span class="c1"># worker      stopped   Background job processor</span>
-</span></span><span class="line"><span class="cl"><span class="c1"># frontend    running   React dev server</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+</span></span><span class="line"><span class="cl"><span class="c1"># frontend    running   React dev server</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># Single target</span>
+</span></span><span class="line"><span class="cl">tukituki status api --json
+</span></span><span class="line"><span class="cl"><span class="c1"># {&#34;name&#34;:&#34;api&#34;,&#34;status&#34;:&#34;running&#34;,&#34;description&#34;:&#34;HTTP API server&#34;,&#34;pid&#34;:12345}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># All targets as JSON</span>
+</span></span><span class="line"><span class="cl">tukituki status --json
+</span></span><span class="line"><span class="cl"><span class="c1"># [{&#34;name&#34;:&#34;api&#34;,...},{&#34;name&#34;:&#34;worker&#34;,...}]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -748,7 +886,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
 <h2><code>tukituki logs</code><span class="hx:absolute hx:-mt-20" id="tukituki-logs"></span>
     <a href="#tukituki-logs" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
-<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki logs &lt;name&gt; <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki logs &lt;name&gt; <span class="o">[</span>--no-follow<span class="o">]</span> <span class="o">[</span>--tail &lt;n&gt;<span class="o">]</span> <span class="o">[</span>--config &lt;path&gt;<span class="o">]</span> <span class="o">[</span>--run-dir &lt;dir&gt;<span class="o">]</span> <span class="o">[</span>--state-dir &lt;dir&gt;<span class="o">]</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -760,21 +898,28 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
   </button>
 </div>
 </div>
-<p>Print the last 100 buffered lines from a target&rsquo;s log file, then follow new output until <strong>Ctrl+C</strong> — equivalent to <code>tail -n 100 -f</code>.</p>
+<p>Print buffered log lines from a target and optionally follow new output until <strong>Ctrl+C</strong>.</p>
+<p><strong>Flags:</strong></p>
+<ul>
+<li><code>--no-follow</code> — print buffered lines and exit immediately. Safe for scripts and AI agents (no blocking).</li>
+<li><code>--tail &lt;n&gt;</code> — number of buffered lines to print (default: 100; 0 = all).</li>
+</ul>
 <p><strong>Behavior notes:</strong></p>
 <ul>
-<li>Works for both running and stopped processes. For stopped processes the buffer is printed but no new lines arrive.</li>
+<li>Works for both running and stopped processes. For stopped processes the buffer is printed; with <code>--no-follow</code> the command exits, otherwise it returns immediately when the channel closes.</li>
 <li>Log files are stored at <code>&lt;state-dir&gt;/logs/&lt;name&gt;.log</code>.</li>
-<li>There is no <code>--lines</code> flag; the 100-line lookback is fixed.</li>
 </ul>
-<p><strong>Example</strong></p>
+<p><strong>Examples</strong></p>
 <div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
-<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="c1"># Follow logs for the &#34;api&#34; target</span>
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="c1"># Follow logs for the &#34;api&#34; target (streams until Ctrl+C)</span>
 </span></span><span class="line"><span class="cl">tukituki logs api
 </span></span><span class="line"><span class="cl">
-</span></span><span class="line"><span class="cl"><span class="c1"># Follow logs using a custom state directory</span>
-</span></span><span class="line"><span class="cl">tukituki logs api --state-dir /tmp/myproject-state</span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+</span></span><span class="line"><span class="cl"><span class="c1"># Print last 100 lines and exit — safe for scripts and agents</span>
+</span></span><span class="line"><span class="cl">tukituki logs api --no-follow
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># Print last 50 lines and exit</span>
+</span></span><span class="line"><span class="cl">tukituki logs api --tail 50 --no-follow</span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
   <button
     class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
     title="Copy code"
@@ -801,7 +946,7 @@ Flag Default Description --config string .tukitukirc.yaml in cwd, then $HOME Pat
   </a></div><div class="hx:mt-6 hx:text-xs">© 2025 Hextra Project.</div></div>
     </div></footer>
     
-    <script defer src="/tukituki/js/main.js" integrity=""></script>
-<script defer src="/tukituki/js/flexsearch.9f5b5908f93ae86f1ecd4b043b799f580c2d1654e703dd9357d568ac41b2547a.js" integrity="sha256-n1tZCPk66G8ezUsEO3mfWAwtFlTnA92TV9VorEGyVHo=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.js" integrity=""></script>
+    <script defer src="/tukituki/js/main.min.a03bf8dbdb527a767062c81d3a2fc5a91c71d0ea086ac4eac110bc9cbb4f380b.js" integrity="sha256-oDv429tSenZwYsgdOi/FqRxx0OoIasTqwRC8nLtPOAs="></script>
+<script defer src="/tukituki/js/flexsearch.433e941a8a573ebb9931fc16fc75266ab6b93f569ac2fb4f3dc66882e0416f4c.js" integrity="sha256-Qz6UGopXPruZMfwW/HUmara5P1aawvtPPcZoguBBb0w=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.min.9b5d3e9fc67ab4ea992026c85954736a0ac782b3a3c2f6829d00778ec91920c3.js" integrity="sha256-m10&#43;n8Z6tOqZICbIWVRzagrHgrOjwvaCnQB3jskZIMM="></script>
   </body>
 </html>

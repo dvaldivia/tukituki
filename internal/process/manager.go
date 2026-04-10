@@ -422,6 +422,19 @@ func (m *Manager) GetStatus(name string) state.Status {
 	return ps.Status
 }
 
+// GetAllProcessStates returns a snapshot of the raw process state for every
+// managed process.  Callers must not mutate the returned values.
+func (m *Manager) GetAllProcessStates() map[string]*state.ProcessState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make(map[string]*state.ProcessState, len(m.st.Processes))
+	for name, ps := range m.st.Processes {
+		out[name] = ps
+	}
+	return out
+}
+
 // GetAllStatuses returns a map of process name → current status.
 func (m *Manager) GetAllStatuses() map[string]state.Status {
 	m.mu.RLock()

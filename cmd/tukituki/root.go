@@ -17,9 +17,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -31,20 +33,42 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Version is set at build time via ldflags: -X main.Version=x.y.z
+var Version = "dev"
+
 var (
-	cfgFile  string
-	runDir   string
-	stateDir string
+	cfgFile    string
+	runDir     string
+	stateDir   string
+	jsonOutput bool
 )
 
 // rootCmd is the base command; when called with no subcommand it starts the TUI.
 var rootCmd = &cobra.Command{
 	Use:   "tukituki",
-	Short: "tukituki — manage multiple dev processes from a TUI",
+	Short: "Manage multiple dev processes from a TUI or headless CLI",
 	Long: `tukituki reads process definitions from .run/*.yaml and lets you
-start, stop, restart, and tail their logs from an interactive TUI.
+start, stop, restart, and tail their logs.
 
-Run with no arguments to open the TUI. Use subcommands for headless control.`,
+INTERACTIVE MODE (default, requires a terminal):
+  Run with no arguments to open the interactive TUI. All processes are started
+  automatically; the TUI lets you watch logs, restart, and stop them.
+
+HEADLESS / SCRIPTED MODE (safe for automation and AI agents):
+  Use subcommands for non-interactive control:
+    tukituki list              - list configured targets
+    tukituki status            - show runtime status of all targets
+    tukituki start [name]      - start one or all targets
+    tukituki stop  [name]      - stop  one or all targets
+    tukituki restart <name>    - restart a target
+    tukituki logs <name>       - tail logs (use --no-follow for one-shot read)
+
+  Add --json to any subcommand for machine-readable JSON output.
+
+CONFIGURATION:
+  Process definitions live in .run/*.yaml (configurable via --run-dir or
+  TUKITUKI_RUN_DIR). Runtime state is stored in .tukituki/ (configurable via
+  --state-dir or TUKITUKI_STATE_DIR).`,
 	RunE: runRoot,
 }
 
@@ -63,9 +87,11 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",
 		"config file (default: .tukitukirc.yaml in cwd, then $HOME/.tukitukirc.yaml)")
 	rootCmd.PersistentFlags().StringVar(&runDir, "run-dir", "",
-		"directory containing YAML run definitions (default: .run)")
+		"directory containing YAML run definitions (env: TUKITUKI_RUN_DIR, default: .run)")
 	rootCmd.PersistentFlags().StringVar(&stateDir, "state-dir", "",
-		"directory for state file and logs (default: .tukituki)")
+		"directory for state file and logs (env: TUKITUKI_STATE_DIR, default: .tukituki)")
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false,
+		"emit machine-readable JSON instead of formatted text (errors also written as JSON to stderr)")
 
 	// Bind persistent flags to viper so env-vars and config file override defaults.
 	_ = viper.BindPFlag("run_dir", rootCmd.PersistentFlags().Lookup("run-dir"))
@@ -73,6 +99,7 @@ func init() {
 
 	// Register subcommands.
 	rootCmd.AddCommand(
+		newVersionCmd(),
 		newListCmd(),
 		newStartCmd(),
 		newStopCmd(),
@@ -122,8 +149,7 @@ func resolveStateDir() string {
 	return ".tukituki"
 }
 
-// resolveProjectRoot returns the absolute path of the current working directory,
-// which is used to resolve relative workdir values in .run/*.yaml files.
+// resolveProjectRoot returns the absolute path of the current working directory.
 func resolveProjectRoot() string {
 	root, err := os.Getwd()
 	if err != nil {
@@ -132,18 +158,53 @@ func resolveProjectRoot() string {
 	return root
 }
 
+// isTTY reports whether stdout is connected to a terminal.
+func isTTY() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// writeJSON marshals v as indented JSON to stdout.
+func writeJSON(v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal JSON: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// exitError writes a plain or JSON error to stderr then exits 1.
+// extra fields are merged into the JSON object (ignored for plain output).
+func exitError(msg string, extra map[string]any) {
+	if jsonOutput {
+		obj := map[string]any{"error": msg}
+		for k, v := range extra {
+			obj[k] = v
+		}
+		data, _ := json.Marshal(obj)
+		fmt.Fprintln(os.Stderr, string(data))
+	} else {
+		fmt.Fprintln(os.Stderr, "Error:", msg)
+	}
+	os.Exit(1)
+}
+
 // loadTargetsOrDie loads run targets, printing a helpful error on failure.
 func loadTargetsOrDie(runDirPath string) []config.RunTarget {
 	targets, err := config.LoadTargets(runDirPath)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
-			fmt.Fprintf(os.Stderr,
-				"Error: No .run/ directory found at %q.\n"+
-					"Create .run/*.yaml files to define your processes.\n", runDirPath)
+			exitError(
+				fmt.Sprintf("no .run/ directory found at %q — create .run/*.yaml files to define your processes", runDirPath),
+				map[string]any{"run_dir": runDirPath},
+			)
 		} else {
-			fmt.Fprintf(os.Stderr, "Error loading targets: %v\n", err)
+			exitError(fmt.Sprintf("loading targets: %v", err), nil)
 		}
-		os.Exit(1)
 	}
 	return targets
 }
@@ -159,23 +220,47 @@ func findTarget(targets []config.RunTarget, name string) config.RunTarget {
 	for _, t := range targets {
 		names = append(names, t.Name)
 	}
-	fmt.Fprintf(os.Stderr,
-		"Error: target %q not found.\nAvailable targets: %s\n",
-		name, strings.Join(names, ", "))
-	os.Exit(1)
+	exitError(
+		fmt.Sprintf("target %q not found", name),
+		map[string]any{"available": names},
+	)
 	return config.RunTarget{} // unreachable
 }
 
 // newManagerOrDie creates a process manager and exits on error.
-// projectRoot is the directory relative to which workdir values are resolved;
-// pass os.Getwd() at the call site.
 func newManagerOrDie(targets []config.RunTarget, stateDirPath string, projectRoot string) *process.Manager {
 	mgr, err := process.NewManager(targets, stateDirPath, projectRoot)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating process manager: %v\n", err)
-		os.Exit(1)
+		exitError(fmt.Sprintf("creating process manager: %v", err), nil)
 	}
 	return mgr
+}
+
+// -------------------------------------------------------------------------
+// `tukituki version`
+// -------------------------------------------------------------------------
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Long:  "Print the tukituki version, Go runtime version, and OS/architecture.",
+		Example: `  tukituki version
+  tukituki version --json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonOutput {
+				return writeJSON(map[string]string{
+					"version":    Version,
+					"go_version": runtime.Version(),
+					"os":         runtime.GOOS,
+					"arch":       runtime.GOARCH,
+				})
+			}
+			fmt.Printf("tukituki %s (%s/%s, %s)\n", Version, runtime.GOOS, runtime.GOARCH, runtime.Version())
+			return nil
+		},
+	}
 }
 
 // -------------------------------------------------------------------------
@@ -183,6 +268,18 @@ func newManagerOrDie(targets []config.RunTarget, stateDirPath string, projectRoo
 // -------------------------------------------------------------------------
 
 func runRoot(cmd *cobra.Command, args []string) error {
+	// Guard: the TUI requires an interactive terminal. Without one (e.g. when
+	// called by an AI agent or in a pipeline), exit early with actionable advice
+	// rather than blocking indefinitely waiting for input.
+	if !isTTY() {
+		exitError(
+			"no terminal detected — the default command opens an interactive TUI and requires a TTY",
+			map[string]any{
+				"hint": "use a subcommand for non-interactive use: list, status, start, stop, restart, logs --no-follow",
+			},
+		)
+	}
+
 	runDirPath := resolveRunDir()
 	stateDirPath := resolveStateDir()
 
@@ -217,137 +314,85 @@ func runRoot(cmd *cobra.Command, args []string) error {
 }
 
 // -------------------------------------------------------------------------
-// `tukituki start [target-name]`
+// `tukituki list`
 // -------------------------------------------------------------------------
 
-func newStartCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "start [target-name]",
-		Short: "Start one or all targets (headless, no TUI)",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			runDirPath := resolveRunDir()
-			stateDirPath := resolveStateDir()
-
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
-
-			ctx := context.Background()
-
-			if len(args) == 1 {
-				name := args[0]
-				_ = findTarget(targets, name) // validate name exists
-				if err := mgr.Start(ctx, name); err != nil {
-					return fmt.Errorf("start %q: %w", name, err)
-				}
-				printStarted(mgr, name)
-			} else {
-				if err := mgr.StartAll(ctx); err != nil {
-					return fmt.Errorf("start all: %w", err)
-				}
-				for _, t := range targets {
-					printStarted(mgr, t.Name)
-				}
-			}
-			return nil
-		},
-	}
+type listEntry struct {
+	Name        string   `json:"name"`
+	Command     string   `json:"command"`
+	Args        []string `json:"args,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Workdir     string   `json:"workdir,omitempty"`
 }
 
-// printStarted prints "Started: {name} (PID {pid})" by consulting the manager statuses.
-// Since GetAllStatuses returns state.Status (not the PID directly), we print what we can.
-func printStarted(mgr *process.Manager, name string) {
-	statuses := mgr.GetAllStatuses()
-	status, ok := statuses[name]
-	if ok {
-		fmt.Printf("Started: %s (status: %s)\n", name, status)
-	} else {
-		fmt.Printf("Started: %s\n", name)
-	}
-}
-
-// -------------------------------------------------------------------------
-// `tukituki stop [target-name]`
-// -------------------------------------------------------------------------
-
-func newStopCmd() *cobra.Command {
+func newListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "stop [target-name]",
-		Short: "Stop one or all targets",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "list",
+		Short: "List all configured run targets",
+		Long: `List all run targets defined in .run/*.yaml.
+
+Outputs name, command, and description for each target.
+Use --json for machine-readable output.`,
+		Example: `  tukituki list
+  tukituki list --json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runDirPath := resolveRunDir()
-			stateDirPath := resolveStateDir()
+			targets := loadTargetsOrDie(resolveRunDir())
 
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
-
-			if err := mgr.AttachToExisting(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
+			if jsonOutput {
+				entries := make([]listEntry, len(targets))
+				for i, t := range targets {
+					entries[i] = listEntry{
+						Name:        t.Name,
+						Command:     t.Command,
+						Args:        t.Args,
+						Description: t.Description,
+						Workdir:     t.Workdir,
+					}
+				}
+				return writeJSON(entries)
 			}
 
-			if len(args) == 1 {
-				name := args[0]
-				_ = findTarget(targets, name)
-				if err := mgr.Stop(name); err != nil {
-					return fmt.Errorf("stop %q: %w", name, err)
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+			fmt.Fprintln(w, "NAME\tCOMMAND\tDESCRIPTION")
+			fmt.Fprintln(w, "----\t-------\t-----------")
+			for _, t := range targets {
+				desc := t.Description
+				if desc == "" {
+					desc = "-"
 				}
-				fmt.Printf("Stopped: %s\n", name)
-			} else {
-				if err := mgr.StopAll(); err != nil {
-					return fmt.Errorf("stop all: %w", err)
-				}
-				for _, t := range targets {
-					fmt.Printf("Stopped: %s\n", t.Name)
-				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", t.Name, t.Command, desc)
 			}
-			return nil
+			return w.Flush()
 		},
 	}
 }
 
 // -------------------------------------------------------------------------
-// `tukituki restart <target-name>`
+// `tukituki status [target-name]`
 // -------------------------------------------------------------------------
 
-func newRestartCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "restart <target-name>",
-		Short: "Restart a target",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			runDirPath := resolveRunDir()
-			stateDirPath := resolveStateDir()
-
-			targets := loadTargetsOrDie(runDirPath)
-			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
-
-			if err := mgr.AttachToExisting(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
-			}
-
-			name := args[0]
-			_ = findTarget(targets, name)
-
-			ctx := context.Background()
-			if err := mgr.Restart(ctx, name); err != nil {
-				return fmt.Errorf("restart %q: %w", name, err)
-			}
-			fmt.Printf("Restarted: %s\n", name)
-			return nil
-		},
-	}
+type statusEntry struct {
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	Description string `json:"description,omitempty"`
+	PID         int    `json:"pid,omitempty"`
 }
-
-// -------------------------------------------------------------------------
-// `tukituki status`
-// -------------------------------------------------------------------------
 
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "status",
-		Short: "Print the status of all targets",
-		Args:  cobra.NoArgs,
+		Use:   "status [target-name]",
+		Short: "Print the status of all targets (or a single target)",
+		Long: `Print the runtime status of managed processes.
+
+With no argument all targets are shown. Pass a target name to query one.
+Status values: running, stopped, failed, unknown.
+Use --json for machine-readable output.`,
+		Example: `  tukituki status
+  tukituki status api
+  tukituki status --json
+  tukituki status api --json`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
@@ -359,7 +404,37 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
 			}
 
+			// Filter to a single target if provided.
+			if len(args) == 1 {
+				t := findTarget(targets, args[0])
+				targets = []config.RunTarget{t}
+			}
+
 			statuses := mgr.GetAllStatuses()
+			states := mgr.GetAllProcessStates()
+
+			if jsonOutput {
+				entries := make([]statusEntry, 0, len(targets))
+				for _, t := range targets {
+					status, ok := statuses[t.Name]
+					if !ok {
+						status = "unknown"
+					}
+					entry := statusEntry{
+						Name:        t.Name,
+						Status:      string(status),
+						Description: t.Description,
+					}
+					if ps, ok := states[t.Name]; ok && ps != nil {
+						entry.PID = ps.PID
+					}
+					entries = append(entries, entry)
+				}
+				if len(args) == 1 && len(entries) == 1 {
+					return writeJSON(entries[0])
+				}
+				return writeJSON(entries)
+			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSTATUS\tDESCRIPTION")
@@ -381,41 +456,161 @@ func newStatusCmd() *cobra.Command {
 }
 
 // -------------------------------------------------------------------------
-// `tukituki list`
+// `tukituki start [target-name]`
 // -------------------------------------------------------------------------
 
-func newListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List all configured run targets",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			targets := loadTargetsOrDie(resolveRunDir())
+type actionResult struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
 
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tCOMMAND\tDESCRIPTION")
-			fmt.Fprintln(w, "----\t-------\t-----------")
-			for _, t := range targets {
-				desc := t.Description
-				if desc == "" {
-					desc = "-"
+func newStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "start [target-name]",
+		Short: "Start one or all targets (headless, no TUI)",
+		Long: `Start one or all targets as background processes (no TUI).
+
+If target-name is omitted, all configured targets are started.
+Processes that are already running are left untouched.
+Use --json for machine-readable output.`,
+		Example: `  tukituki start
+  tukituki start api
+  tukituki start api --json`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runDirPath := resolveRunDir()
+			stateDirPath := resolveStateDir()
+
+			targets := loadTargetsOrDie(runDirPath)
+			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+
+			ctx := context.Background()
+
+			if len(args) == 1 {
+				name := args[0]
+				_ = findTarget(targets, name)
+				if err := mgr.Start(ctx, name); err != nil {
+					return fmt.Errorf("start %q: %w", name, err)
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", t.Name, t.Command, desc)
+				return printActionResult(mgr, name)
 			}
-			return w.Flush()
+
+			if err := mgr.StartAll(ctx); err != nil {
+				return fmt.Errorf("start all: %w", err)
+			}
+
+			if jsonOutput {
+				results := make([]actionResult, 0, len(targets))
+				statuses := mgr.GetAllStatuses()
+				for _, t := range targets {
+					st := statuses[t.Name]
+					results = append(results, actionResult{Name: t.Name, Status: string(st)})
+				}
+				return writeJSON(results)
+			}
+			for _, t := range targets {
+				printStartedText(mgr, t.Name)
+			}
+			return nil
+		},
+	}
+}
+
+func printActionResult(mgr *process.Manager, name string) error {
+	statuses := mgr.GetAllStatuses()
+	st := statuses[name]
+	if jsonOutput {
+		return writeJSON(actionResult{Name: name, Status: string(st)})
+	}
+	fmt.Printf("Started: %s (status: %s)\n", name, st)
+	return nil
+}
+
+func printStartedText(mgr *process.Manager, name string) {
+	statuses := mgr.GetAllStatuses()
+	status, ok := statuses[name]
+	if ok {
+		fmt.Printf("Started: %s (status: %s)\n", name, status)
+	} else {
+		fmt.Printf("Started: %s\n", name)
+	}
+}
+
+// -------------------------------------------------------------------------
+// `tukituki stop [target-name]`
+// -------------------------------------------------------------------------
+
+func newStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop [target-name]",
+		Short: "Stop one or all targets",
+		Long: `Stop one or all running targets.
+
+Sends SIGTERM, waits up to 5 seconds, then SIGKILLs if still running.
+If target-name is omitted, all targets are stopped.
+Use --json for machine-readable output.`,
+		Example: `  tukituki stop
+  tukituki stop api
+  tukituki stop api --json`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runDirPath := resolveRunDir()
+			stateDirPath := resolveStateDir()
+
+			targets := loadTargetsOrDie(runDirPath)
+			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+
+			if err := mgr.AttachToExisting(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
+			}
+
+			if len(args) == 1 {
+				name := args[0]
+				_ = findTarget(targets, name)
+				if err := mgr.Stop(name); err != nil {
+					return fmt.Errorf("stop %q: %w", name, err)
+				}
+				if jsonOutput {
+					return writeJSON(actionResult{Name: name, Status: "stopped"})
+				}
+				fmt.Printf("Stopped: %s\n", name)
+				return nil
+			}
+
+			if err := mgr.StopAll(); err != nil {
+				return fmt.Errorf("stop all: %w", err)
+			}
+
+			if jsonOutput {
+				results := make([]actionResult, len(targets))
+				for i, t := range targets {
+					results[i] = actionResult{Name: t.Name, Status: "stopped"}
+				}
+				return writeJSON(results)
+			}
+			for _, t := range targets {
+				fmt.Printf("Stopped: %s\n", t.Name)
+			}
+			return nil
 		},
 	}
 }
 
 // -------------------------------------------------------------------------
-// `tukituki logs <target-name>`
+// `tukituki restart <target-name>`
 // -------------------------------------------------------------------------
 
-func newLogsCmd() *cobra.Command {
+func newRestartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "logs <target-name>",
-		Short: "Tail logs for a target (last 100 lines, then follow)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "restart <target-name>",
+		Short: "Restart a target",
+		Long: `Stop and then start the named target.
+
+If the process is not currently running, it is simply started.
+Use --json for machine-readable output.`,
+		Example: `  tukituki restart api
+  tukituki restart api --json`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
@@ -430,17 +625,71 @@ func newLogsCmd() *cobra.Command {
 			name := args[0]
 			_ = findTarget(targets, name)
 
-			// Print buffered lines (last 100).
+			ctx := context.Background()
+			if err := mgr.Restart(ctx, name); err != nil {
+				return fmt.Errorf("restart %q: %w", name, err)
+			}
+
+			statuses := mgr.GetAllStatuses()
+			st := statuses[name]
+			if jsonOutput {
+				return writeJSON(actionResult{Name: name, Status: string(st)})
+			}
+			fmt.Printf("Restarted: %s (status: %s)\n", name, st)
+			return nil
+		},
+	}
+}
+
+// -------------------------------------------------------------------------
+// `tukituki logs <target-name>`
+// -------------------------------------------------------------------------
+
+func newLogsCmd() *cobra.Command {
+	var noFollow bool
+	var tail int
+
+	cmd := &cobra.Command{
+		Use:   "logs <target-name>",
+		Short: "Tail logs for a target",
+		Long: `Print recent log lines for a target and optionally follow new output.
+
+By default prints the last 100 lines and then streams new lines until Ctrl+C.
+Use --no-follow to print buffered lines and exit immediately (safe for scripts
+and AI agents).  Use --tail to control how many buffered lines are shown.`,
+		Example: `  tukituki logs api
+  tukituki logs api --no-follow
+  tukituki logs api --tail 50 --no-follow`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runDirPath := resolveRunDir()
+			stateDirPath := resolveStateDir()
+
+			targets := loadTargetsOrDie(runDirPath)
+			mgr := newManagerOrDie(targets, stateDirPath, resolveProjectRoot())
+
+			if err := mgr.AttachToExisting(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
+			}
+
+			name := args[0]
+			_ = findTarget(targets, name)
+
+			// Print buffered lines up to --tail limit.
 			buffered := mgr.GetLogLines(name)
 			start := 0
-			if len(buffered) > 100 {
-				start = len(buffered) - 100
+			if tail > 0 && len(buffered) > tail {
+				start = len(buffered) - tail
 			}
 			w := bufio.NewWriter(os.Stdout)
 			for _, line := range buffered[start:] {
 				fmt.Fprintln(w, line)
 			}
 			_ = w.Flush()
+
+			if noFollow {
+				return nil
+			}
 
 			// Follow new lines until Ctrl+C.
 			ch := mgr.WatchLogLines(name)
@@ -463,4 +712,11 @@ func newLogsCmd() *cobra.Command {
 			}
 		},
 	}
+
+	cmd.Flags().BoolVar(&noFollow, "no-follow", false,
+		"print buffered log lines and exit without streaming (safe for scripts and agents)")
+	cmd.Flags().IntVar(&tail, "tail", 100,
+		"number of buffered log lines to print (0 = all)")
+
+	return cmd
 }
