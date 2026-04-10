@@ -20,11 +20,20 @@ A terminal UI for managing multiple dev processes. Define your processes in `.ru
 
 ## Installation
 
+**Homebrew (macOS and Linux):**
+
+```sh
+brew tap dvaldivia/tukituki
+brew install tukituki
+```
+
+**Go install:**
+
 ```sh
 go install github.com/dvaldivia/tukituki/cmd/tukituki@latest
 ```
 
-Or build from source:
+**Build from source:**
 
 ```sh
 cd tukituki
@@ -40,6 +49,7 @@ tukituki start api    # Start a single target
 tukituki stop         # Stop all processes
 tukituki stop api     # Stop a single target
 tukituki restart api  # Restart a target
+tukituki list         # List all configured run targets
 tukituki status       # Print status of all targets
 tukituki logs api     # Tail logs for a target (last 100 lines, then follow)
 ```
@@ -88,7 +98,7 @@ cleanup:
 | `args` | no | List of arguments |
 | `workdir` | no | Working directory, relative to project root |
 | `env` | no | Extra environment variables (merged with the parent env) |
-| `description` | no | Human-readable label shown in `tukituki status` |
+| `description` | no | Human-readable label shown in `tukituki list` and `tukituki status` |
 | `cleanup` | no | Shell commands run after the process stops |
 
 ### How processes run
