@@ -28,6 +28,21 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: tukituki
+    repository:
+      owner: dvaldivia
+      name: homebrew-tukituki
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/dvaldivia/tukituki"
+    description: "A terminal UI for managing multiple dev processes"
+    license: "Apache-2.0"
+    install: |
+      bin.install "tukituki"
+    test: |
+      system "#{bin}/tukituki", "--version"
+
 changelog:
   sort: asc
   filters:
