@@ -304,6 +304,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	// ── Mouse scroll ─────────────────────────────────────────────────────────
+	case tea.MouseMsg:
+		var vpCmd tea.Cmd
+		m.viewport, vpCmd = m.viewport.Update(msg)
+		if vpCmd != nil {
+			cmds = append(cmds, vpCmd)
+		}
+
 	// ── Log line arrived ─────────────────────────────────────────────────────
 	case logLineMsg:
 		buf, ok := m.logs[msg.target]
