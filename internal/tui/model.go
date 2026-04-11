@@ -116,6 +116,10 @@ type Model struct {
 
 	// helpMode shows the keybinding help overlay in the right panel.
 	helpMode bool
+
+	// mouseEnabled tracks whether bubbletea's mouse capture is on.
+	// When false the terminal regains native text-selection behaviour.
+	mouseEnabled bool
 }
 
 // NewModel constructs a Model ready for use with bubbletea.
@@ -135,17 +139,18 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface) Model {
 	vp.SetContent("")
 
 	return Model{
-		targets:    targets,
-		manager:    manager,
-		selected:   0,
-		logs:       logs,
-		viewport:   vp,
-		logWatches: logWatches,
-		ctx:        ctx,
-		cancel:     cancel,
-		statuses:   statuses,
-		keys:       defaultKeyMap(),
-		atBottom:   true,
+		targets:      targets,
+		manager:      manager,
+		selected:     0,
+		logs:         logs,
+		viewport:     vp,
+		logWatches:   logWatches,
+		ctx:          ctx,
+		cancel:       cancel,
+		statuses:     statuses,
+		keys:         defaultKeyMap(),
+		atBottom:     true,
+		mouseEnabled: true,
 	}
 }
 
@@ -307,6 +312,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case matchKey(msg, m.keys.Help):
 				m.helpMode = true
+
+			case matchKey(msg, m.keys.ToggleMouse):
+				if m.mouseEnabled {
+					m.mouseEnabled = false
+					m.statusMsg = "mouse off – select text freely (M to re-enable)"
+					cmds = append(cmds, tea.DisableMouse)
+				} else {
+					m.mouseEnabled = true
+					m.statusMsg = "mouse on"
+					cmds = append(cmds, tea.EnableMouseCellMotion)
+				}
 
 			default:
 				// Forward scroll keys to the viewport.
@@ -644,6 +660,7 @@ func (m Model) renderHelp() string {
 				{"/", "search logs"},
 				{"d", "dump logs to file"},
 				{"c", "clear logs"},
+				{"M", "toggle mouse (for text select)"},
 			},
 		},
 		{

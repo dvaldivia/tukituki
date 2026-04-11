@@ -40,6 +40,10 @@ type keyMap struct {
 
 	// Help toggles the help overlay.
 	Help key.Binding
+
+	// ToggleMouse disables/re-enables mouse capture so the terminal can
+	// perform native text selection when mouse is off.
+	ToggleMouse key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -101,6 +105,10 @@ func defaultKeyMap() keyMap {
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
+		),
+		ToggleMouse: key.NewBinding(
+			key.WithKeys("M"),
+			key.WithHelp("M", "toggle mouse (for text select)"),
 		),
 	}
 }
