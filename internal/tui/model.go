@@ -113,6 +113,9 @@ type Model struct {
 	searchQuery    string
 	searchMatches  []int // line indices (in logBuffer) matching the query
 	searchMatchIdx int   // index into searchMatches for the current match
+
+	// helpMode shows the keybinding help overlay in the right panel.
+	helpMode bool
 }
 
 // NewModel constructs a Model ready for use with bubbletea.
@@ -194,6 +197,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Keyboard input ───────────────────────────────────────────────────────
 	case tea.KeyMsg:
+		if m.helpMode {
+			// Any key dismisses the help overlay; ? toggles it off explicitly.
+			m.helpMode = false
+			break
+		}
 		if m.searchMode {
 			switch {
 			case msg.Type == tea.KeyEscape:
@@ -243,18 +251,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selected > 0 {
 					m.selected--
 					m.loadSelectedLogs()
+					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Down):
 				if m.selected < len(m.targets)-1 {
 					m.selected++
 					m.loadSelectedLogs()
+					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Tab):
 				if len(m.targets) > 0 {
 					m.selected = (m.selected + 1) % len(m.targets)
 					m.loadSelectedLogs()
+					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Restart):
@@ -294,22 +305,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchMatchIdx = 0
 				m.resizeViewport()
 
+			case matchKey(msg, m.keys.Help):
+				m.helpMode = true
+
 			default:
 				// Forward scroll keys to the viewport.
+				wasAtBottom := m.viewport.AtBottom()
 				var vpCmd tea.Cmd
 				m.viewport, vpCmd = m.viewport.Update(msg)
 				if vpCmd != nil {
 					cmds = append(cmds, vpCmd)
+				}
+				// If the user scrolled back to the bottom, refresh viewport
+				// content so any lines that arrived while scrolled up are shown.
+				if !wasAtBottom && m.viewport.AtBottom() {
+					m.refreshViewportContent()
 				}
 			}
 		}
 
 	// ── Mouse scroll ─────────────────────────────────────────────────────────
 	case tea.MouseMsg:
+		wasAtBottom := m.viewport.AtBottom()
 		var vpCmd tea.Cmd
 		m.viewport, vpCmd = m.viewport.Update(msg)
 		if vpCmd != nil {
 			cmds = append(cmds, vpCmd)
+		}
+		// If the user scrolled back to the bottom, refresh viewport content.
+		if !wasAtBottom && m.viewport.AtBottom() {
+			m.refreshViewportContent()
 		}
 
 	// ── Log line arrived ─────────────────────────────────────────────────────
@@ -326,9 +351,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.searchMatches = append(m.searchMatches, len(buf.lines)-1)
 					}
 				}
-				m.viewport.SetContent(m.viewportContent(buf))
-				if wasAtBottom {
-					m.viewport.GotoBottom()
+				// Only rebuild viewport content when auto-scrolling (at bottom)
+				// or when search is active (highlights need to be up to date).
+				// When scrolled up, we skip the expensive rebuild and defer it
+				// until the user returns to the bottom or switches targets.
+				if wasAtBottom || m.searchMode {
+					m.viewport.SetContent(m.viewportContent(buf))
+					if wasAtBottom {
+						m.viewport.GotoBottom()
+					}
 				}
 			}
 		}
@@ -425,7 +456,7 @@ func (m Model) renderHeader() string {
 	if m.statusMsg != "" {
 		left += "  " + m.statusMsg
 	}
-	right := "q=detach  Q/^C=stop all "
+	right := "?=help  q=detach  Q/^C=stop all "
 
 	gap := m.width - len(left) - len(right)
 	if gap < 1 {
@@ -543,6 +574,16 @@ func (m Model) renderLeft() string {
 }
 
 func (m Model) renderRight() string {
+	panelWidth := m.rightPanelOuterWidth()
+	panelHeight := m.height - 1 - m.searchBarHeight() - 2 // total - header - search bar - borders
+
+	if m.helpMode {
+		return rightPanelStyle.
+			Width(panelWidth).
+			Height(panelHeight).
+			Render(m.renderHelp())
+	}
+
 	// Panel title.
 	targetName := "(none)"
 	if len(m.targets) > 0 {
@@ -557,9 +598,80 @@ func (m Model) renderRight() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, titleBlock, vpView)
 
 	return rightPanelStyle.
-		Width(m.rightPanelOuterWidth()).
-		Height(m.height - 1 - m.searchBarHeight() - 2). // total - header - search bar - borders
+		Width(panelWidth).
+		Height(panelHeight).
 		Render(content)
+}
+
+// renderHelp returns the keybinding reference shown when helpMode is active.
+func (m Model) renderHelp() string {
+	innerWidth := m.rightPanelInnerWidth()
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ECEFF1")).Padding(0, 1)
+	keyStyle := lipgloss.NewStyle().Foreground(colorBlue).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#B0BEC5"))
+	dimStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+
+	title := titleStyle.Render("Keyboard shortcuts")
+	divider := strings.Repeat("─", innerWidth)
+
+	type entry struct{ keys, desc string }
+	sections := []struct {
+		heading string
+		entries []entry
+	}{
+		{
+			"Navigation",
+			[]entry{
+				{"↑ / k", "move up"},
+				{"↓ / j", "move down"},
+				{"tab", "next target (wrap)"},
+			},
+		},
+		{
+			"Process control",
+			[]entry{
+				{"r", "restart selected"},
+				{"s", "stop selected"},
+				{"S", "start selected"},
+			},
+		},
+		{
+			"Logs",
+			[]entry{
+				{"pgup / b", "page up"},
+				{"pgdn / f", "page down"},
+				{"/", "search logs"},
+				{"d", "dump logs to file"},
+				{"c", "clear logs"},
+			},
+		},
+		{
+			"Application",
+			[]entry{
+				{"q", "detach (keep processes)"},
+				{"Q / ^C", "stop all & exit"},
+				{"?", "toggle this help"},
+			},
+		},
+	}
+
+	var lines []string
+	lines = append(lines, title, divider, "")
+
+	for _, sec := range sections {
+		lines = append(lines, dimStyle.Render(" "+sec.heading))
+		for _, e := range sec.entries {
+			keyCol := keyStyle.Render(fmt.Sprintf("  %-12s", e.keys))
+			descCol := descStyle.Render(e.desc)
+			lines = append(lines, keyCol+descCol)
+		}
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, dimStyle.Render(" press any key to dismiss"))
+
+	return strings.Join(lines, "\n")
 }
 
 // ─── Layout math ─────────────────────────────────────────────────────────────

@@ -37,6 +37,9 @@ type keyMap struct {
 
 	// Search opens the search bar.
 	Search key.Binding
+
+	// Help toggles the help overlay.
+	Help key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -94,6 +97,10 @@ func defaultKeyMap() keyMap {
 		Search: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "help"),
 		),
 	}
 }
