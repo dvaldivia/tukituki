@@ -44,6 +44,9 @@ type keyMap struct {
 	// ToggleMouse disables/re-enables mouse capture so the terminal can
 	// perform native text selection when mouse is off.
 	ToggleMouse key.Binding
+
+	// ToggleWrap toggles soft word-wrap in the log viewport.
+	ToggleWrap key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -109,6 +112,10 @@ func defaultKeyMap() keyMap {
 		ToggleMouse: key.NewBinding(
 			key.WithKeys("M"),
 			key.WithHelp("M", "toggle mouse (for text select)"),
+		),
+		ToggleWrap: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "toggle line wrap"),
 		),
 	}
 }

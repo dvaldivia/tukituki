@@ -120,6 +120,9 @@ type Model struct {
 	// mouseEnabled tracks whether bubbletea's mouse capture is on.
 	// When false the terminal regains native text-selection behaviour.
 	mouseEnabled bool
+
+	// wrapLogs enables soft word-wrap in the log viewport.
+	wrapLogs bool
 }
 
 // NewModel constructs a Model ready for use with bubbletea.
@@ -323,6 +326,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "mouse on"
 					cmds = append(cmds, tea.EnableMouseCellMotion)
 				}
+
+			case matchKey(msg, m.keys.ToggleWrap):
+				m.wrapLogs = !m.wrapLogs
+				m.refreshViewportContent()
 
 			default:
 				// Forward scroll keys to the viewport.
@@ -661,6 +668,7 @@ func (m Model) renderHelp() string {
 				{"d", "dump logs to file"},
 				{"c", "clear logs"},
 				{"M", "toggle mouse (for text select)"},
+				{"w", "toggle line wrap"},
 			},
 		},
 		{
@@ -870,12 +878,62 @@ func (m *Model) refreshViewportContent() {
 }
 
 // viewportContent returns the log content to set in the viewport, applying
-// search highlighting when a search is active.
+// search highlighting and/or line wrapping as configured.
 func (m Model) viewportContent(buf *logBuffer) string {
+	var content string
 	if !m.searchMode || m.searchQuery == "" {
-		return buf.content()
+		content = buf.content()
+	} else {
+		content = m.renderLogsWithHighlight(buf)
 	}
-	return m.renderLogsWithHighlight(buf)
+	if m.wrapLogs {
+		content = wrapContent(content, m.viewport.Width)
+	}
+	return content
+}
+
+// wrapContent soft-wraps every line in content at width visible columns.
+// It is ANSI-aware: lipgloss.Width is used to measure visible length so that
+// escape codes (e.g. search highlights) do not count toward the limit.
+func wrapContent(content string, width int) string {
+	if width <= 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	var out []string
+	for _, line := range lines {
+		out = append(out, wrapLine(line, width)...)
+	}
+	return strings.Join(out, "\n")
+}
+
+// wrapLine splits a single (possibly ANSI-coloured) line into chunks that
+// each fit within width visible columns. It walks rune-by-rune, tracking
+// visible width via lipgloss.Width on the accumulated segment.
+func wrapLine(line string, width int) []string {
+	if lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+	var result []string
+	runes := []rune(line)
+	start := 0
+	for start < len(runes) {
+		end := start
+		for end < len(runes) {
+			next := end + 1
+			if lipgloss.Width(string(runes[start:next])) > width {
+				break
+			}
+			end = next
+		}
+		if end == start {
+			// Single rune wider than viewport (shouldn't happen in practice).
+			end = start + 1
+		}
+		result = append(result, string(runes[start:end]))
+		start = end
+	}
+	return result
 }
 
 // renderLogsWithHighlight returns the log lines joined with search matches
