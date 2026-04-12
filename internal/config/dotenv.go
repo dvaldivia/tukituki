@@ -99,10 +99,10 @@ func parseDotEnvValue(v string) string {
 	}
 }
 
-// ExpandEnv returns a copy of targets with ${VAR} references in each target's
-// env values expanded. The lookup order is: vars (from .env file) first, then
-// the process's inherited OS environment via os.Getenv.
-// Targets whose Env map has no interpolation markers are returned as-is.
+// ExpandEnv returns a copy of targets with ${VAR} references expanded in each
+// target's command, workdir, args, cleanup, and env values. The lookup order
+// is: vars (from .env file) first, then the process's inherited OS environment
+// via os.Getenv.
 func ExpandEnv(targets []RunTarget, vars map[string]string) []RunTarget {
 	if len(vars) == 0 {
 		return targets
@@ -115,6 +115,18 @@ func ExpandEnv(targets []RunTarget, vars map[string]string) []RunTarget {
 	}
 	out := make([]RunTarget, len(targets))
 	for i, t := range targets {
+		t.Command = os.Expand(t.Command, lookup)
+		t.Workdir = os.Expand(t.Workdir, lookup)
+		expandedArgs := make([]string, len(t.Args))
+		for j, a := range t.Args {
+			expandedArgs[j] = os.Expand(a, lookup)
+		}
+		t.Args = expandedArgs
+		expandedCleanup := make([]string, len(t.Cleanup))
+		for j, c := range t.Cleanup {
+			expandedCleanup[j] = os.Expand(c, lookup)
+		}
+		t.Cleanup = expandedCleanup
 		expanded := make(map[string]string, len(t.Env))
 		for k, v := range t.Env {
 			expanded[k] = os.Expand(v, lookup)

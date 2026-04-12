@@ -191,6 +191,62 @@ func TestExpandEnv_DoesNotMutateOriginal(t *testing.T) {
 	}
 }
 
+func TestExpandEnv_SubstitutesArgs(t *testing.T) {
+	targets := []RunTarget{
+		{
+			Name:    "docs",
+			Command: "hugo",
+			Args:    []string{"server", "--baseURL", "http://${APP_DOMAIN}:5313"},
+		},
+	}
+	result := ExpandEnv(targets, map[string]string{"APP_DOMAIN": "myhost"})
+
+	want := []string{"server", "--baseURL", "http://myhost:5313"}
+	if len(result[0].Args) != len(want) {
+		t.Fatalf("args len = %d, want %d", len(result[0].Args), len(want))
+	}
+	for i, got := range result[0].Args {
+		if got != want[i] {
+			t.Errorf("args[%d] = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestExpandEnv_SubstitutesCommand(t *testing.T) {
+	targets := []RunTarget{
+		{Name: "run", Command: "${BINARY}", Args: []string{}},
+	}
+	result := ExpandEnv(targets, map[string]string{"BINARY": "myapp"})
+	if result[0].Command != "myapp" {
+		t.Errorf("Command = %q, want %q", result[0].Command, "myapp")
+	}
+}
+
+func TestExpandEnv_SubstitutesWorkdir(t *testing.T) {
+	targets := []RunTarget{
+		{Name: "run", Command: "make", Workdir: "${PROJECT_DIR}/docs"},
+	}
+	result := ExpandEnv(targets, map[string]string{"PROJECT_DIR": "/home/user/app"})
+	if result[0].Workdir != "/home/user/app/docs" {
+		t.Errorf("Workdir = %q, want %q", result[0].Workdir, "/home/user/app/docs")
+	}
+}
+
+func TestExpandEnv_SubstitutesCleanup(t *testing.T) {
+	targets := []RunTarget{
+		{
+			Name:    "server",
+			Command: "node",
+			Cleanup: []string{"lsof -ti:${PORT} | xargs kill -9 2>/dev/null || true"},
+		},
+	}
+	result := ExpandEnv(targets, map[string]string{"PORT": "3000"})
+	want := "lsof -ti:3000 | xargs kill -9 2>/dev/null || true"
+	if result[0].Cleanup[0] != want {
+		t.Errorf("Cleanup[0] = %q, want %q", result[0].Cleanup[0], want)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
