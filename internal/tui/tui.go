@@ -21,9 +21,11 @@ import (
 
 // Start runs the bubbletea program with the given targets and manager.
 // It blocks until the user quits.
+// runDir and projectRoot are used to watch for run-file changes and reload
+// targets automatically.
 // Returns whether the user chose to also stop all processes (Q vs q).
-func Start(targets []config.RunTarget, manager ManagerInterface) (stopAll bool, err error) {
-	m := NewModel(targets, manager)
+func Start(targets []config.RunTarget, manager ManagerInterface, runDir, projectRoot string) (stopAll bool, err error) {
+	m := NewModel(targets, manager, runDir, projectRoot)
 
 	p := tea.NewProgram(
 		m,

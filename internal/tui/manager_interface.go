@@ -17,6 +17,7 @@ package tui
 import (
 	"context"
 
+	"github.com/dvaldivia/tukituki/internal/config"
 	"github.com/dvaldivia/tukituki/internal/state"
 )
 
@@ -52,4 +53,8 @@ type ManagerInterface interface {
 
 	// StopAll gracefully stops every managed target.
 	StopAll() error
+
+	// UpdateTargets replaces the target list so that subsequent Start/Restart
+	// calls use the latest configuration from disk.
+	UpdateTargets(targets []config.RunTarget)
 }

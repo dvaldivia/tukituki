@@ -199,6 +199,30 @@ func TestManager_AttachToExisting(t *testing.T) {
 	_ = m.Stop("attach-test")
 }
 
+func TestBuildShellCmd(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		args    []string
+		want    string
+	}{
+		{"simple", "echo", []string{"hello"}, "echo hello"},
+		{"empty arg", "cmd", []string{"--flag", ""}, "cmd --flag ''"},
+		{"spaces in arg", "cmd", []string{"hello world"}, "cmd 'hello world'"},
+		{"no args", "cmd", nil, "cmd"},
+		{"multiple empty args", "cmd", []string{"", ""}, "cmd '' ''"},
+		{"flag with empty value", "reverse-proxy", []string{"-tls-certificate", "", "-tls-key", ""}, "reverse-proxy -tls-certificate '' -tls-key ''"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := BuildShellCmd(tc.command, tc.args)
+			if got != tc.want {
+				t.Errorf("BuildShellCmd(%q, %v) = %q, want %q", tc.command, tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewManager_CreatesDirs(t *testing.T) {
 	base := t.TempDir()
 	stateDir := filepath.Join(base, "deep", "nested", ".tukituki")

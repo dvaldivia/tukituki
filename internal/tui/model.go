@@ -17,6 +17,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dvaldivia/tukituki/internal/config"
 	"github.com/dvaldivia/tukituki/internal/state"
+	"github.com/fsnotify/fsnotify"
 )
 
 // logBuffer holds the accumulated log lines for a single target.
@@ -63,6 +65,15 @@ type quitMsg struct{ stopAll bool }
 // clearLogMsg is sent after ClearLog completes so the TUI can flush its buffer.
 type clearLogMsg struct{ target string }
 
+// fileChangeMsg signals that one or more run-definition files changed on disk.
+type fileChangeMsg struct{}
+
+// targetsReloadedMsg carries the result of re-parsing the run directory.
+type targetsReloadedMsg struct {
+	targets []config.RunTarget
+	err     error
+}
+
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 // waitForLogLine blocks on the channel and returns a logLineMsg when a line
@@ -82,6 +93,53 @@ func statusTick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return statusTickMsg(t)
 	})
+}
+
+// waitForFileChange blocks until a .yaml/.yml file change is detected,
+// debounces for 200ms, then returns a fileChangeMsg.
+func waitForFileChange(watcher *fsnotify.Watcher) tea.Cmd {
+	return func() tea.Msg {
+		for {
+			select {
+			case ev, ok := <-watcher.Events:
+				if !ok {
+					return nil
+				}
+				ext := filepath.Ext(ev.Name)
+				if ext == ".yaml" || ext == ".yml" {
+					// Debounce: wait for events to settle.
+					timer := time.NewTimer(200 * time.Millisecond)
+					for {
+						select {
+						case <-timer.C:
+							return fileChangeMsg{}
+						case _, ok := <-watcher.Events:
+							if !ok {
+								timer.Stop()
+								return fileChangeMsg{}
+							}
+							timer.Reset(200 * time.Millisecond)
+						case <-watcher.Errors:
+						}
+					}
+				}
+			case <-watcher.Errors:
+			}
+		}
+	}
+}
+
+// reloadTargets re-parses run files from disk and returns the result.
+func reloadTargets(runDir, projectRoot string) tea.Cmd {
+	return func() tea.Msg {
+		targets, err := config.LoadTargets(runDir)
+		if err != nil {
+			return targetsReloadedMsg{err: err}
+		}
+		dotenv, _ := config.ParseDotEnv(filepath.Join(projectRoot, ".env"))
+		targets = config.ExpandEnv(targets, dotenv)
+		return targetsReloadedMsg{targets: targets}
+	}
 }
 
 // ─── Model ───────────────────────────────────────────────────────────────────
@@ -123,10 +181,17 @@ type Model struct {
 
 	// wrapLogs enables soft word-wrap in the log viewport.
 	wrapLogs bool
+
+	// runDir and projectRoot are used to reload targets from disk.
+	runDir      string
+	projectRoot string
+
+	// fsWatcher watches the run directory for file changes.
+	fsWatcher *fsnotify.Watcher
 }
 
 // NewModel constructs a Model ready for use with bubbletea.
-func NewModel(targets []config.RunTarget, manager ManagerInterface) Model {
+func NewModel(targets []config.RunTarget, manager ManagerInterface, runDir, projectRoot string) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	logs := make(map[string]*logBuffer, len(targets))
@@ -141,6 +206,18 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface) Model {
 	vp := viewport.New(80, 24) // placeholder; resized on WindowSizeMsg
 	vp.SetContent("")
 
+	// Watch the run directory for config file changes.
+	var watcher *fsnotify.Watcher
+	if runDir != "" {
+		if w, err := fsnotify.NewWatcher(); err == nil {
+			if err := w.Add(runDir); err == nil {
+				watcher = w
+			} else {
+				w.Close()
+			}
+		}
+	}
+
 	return Model{
 		targets:      targets,
 		manager:      manager,
@@ -154,6 +231,9 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface) Model {
 		keys:         defaultKeyMap(),
 		atBottom:     true,
 		mouseEnabled: true,
+		runDir:       runDir,
+		projectRoot:  projectRoot,
+		fsWatcher:    watcher,
 	}
 }
 
@@ -162,6 +242,11 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface) Model {
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		statusTick(),
+	}
+
+	// Start watching the run directory for config file changes.
+	if m.fsWatcher != nil {
+		cmds = append(cmds, waitForFileChange(m.fsWatcher))
 	}
 
 	// Start watching logs for each target and seed the buffer from existing lines.
@@ -248,11 +333,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				m.stopAll = true
 				m.cancel()
+				if m.fsWatcher != nil {
+					m.fsWatcher.Close()
+				}
 				return m, tea.Quit
 
 			case matchKey(msg, m.keys.Detach):
 				m.quitting = true
 				m.cancel()
+				if m.fsWatcher != nil {
+					m.fsWatcher.Close()
+				}
 				return m, tea.Quit
 
 			case matchKey(msg, m.keys.Up):
@@ -415,6 +506,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actionResultMsg:
 		m.statusMsg = msg.msg
 		// Clear the status message after 3 seconds.
+		cmds = append(cmds, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return actionResultMsg{msg: ""}
+		}))
+
+	// ── Run-file changed on disk ────────────────────────────────────────────
+	case fileChangeMsg:
+		cmds = append(cmds, reloadTargets(m.runDir, m.projectRoot))
+		if m.fsWatcher != nil {
+			cmds = append(cmds, waitForFileChange(m.fsWatcher))
+		}
+
+	// ── Targets reloaded from disk ──────────────────────────────────────────
+	case targetsReloadedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("reload error: %s", msg.err)
+		} else {
+			reloadCmds := m.applyNewTargets(msg.targets)
+			cmds = append(cmds, reloadCmds...)
+			m.statusMsg = "config reloaded"
+		}
 		cmds = append(cmds, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 			return actionResultMsg{msg: ""}
 		}))
@@ -754,6 +865,60 @@ func (m *Model) loadSelectedLogs() {
 	m.viewport.SetContent(m.viewportContent(buf))
 	m.viewport.GotoBottom()
 	m.atBottom = true
+}
+
+// applyNewTargets reconciles the in-memory target list with a freshly loaded
+// set from disk. It sets up log buffers / watches for added targets, cleans up
+// removed targets, and updates the manager's target list.
+func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
+	oldNames := make(map[string]bool, len(m.targets))
+	for _, t := range m.targets {
+		oldNames[t.Name] = true
+	}
+	newNames := make(map[string]bool, len(newTargets))
+	for _, t := range newTargets {
+		newNames[t.Name] = true
+	}
+
+	var cmds []tea.Cmd
+
+	// Set up log buffers and watches for added targets.
+	for _, t := range newTargets {
+		if !oldNames[t.Name] {
+			m.logs[t.Name] = &logBuffer{}
+			m.statuses[t.Name] = state.StatusUnknown
+			ch := m.manager.WatchLogLines(t.Name)
+			m.logWatches[t.Name] = ch
+			cmds = append(cmds, waitForLogLine(ch, t.Name))
+		}
+	}
+
+	// Clean up removed targets.
+	for _, t := range m.targets {
+		if !newNames[t.Name] {
+			delete(m.logs, t.Name)
+			delete(m.statuses, t.Name)
+			delete(m.logWatches, t.Name)
+		}
+	}
+
+	m.targets = newTargets
+	m.manager.UpdateTargets(newTargets)
+
+	// Adjust selected index if out of bounds.
+	if m.selected >= len(m.targets) {
+		m.selected = len(m.targets) - 1
+		if m.selected < 0 {
+			m.selected = 0
+		}
+	}
+
+	// Refresh the viewport for the current selection.
+	if len(m.targets) > 0 {
+		m.loadSelectedLogs()
+	}
+
+	return cmds
 }
 
 // ─── Status icons ─────────────────────────────────────────────────────────────

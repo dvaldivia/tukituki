@@ -108,6 +108,7 @@ func init() {
 		newRestartCmd(),
 		newStatusCmd(),
 		newLogsCmd(),
+		newDebugCmd(),
 	)
 }
 
@@ -308,7 +309,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: some processes failed to start: %v\n", err)
 	}
 
-	stopAll, err := tui.Start(targets, mgr)
+	stopAll, err := tui.Start(targets, mgr, runDirPath, projectRoot)
 	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
 	}
@@ -742,6 +743,107 @@ Use --json for machine-readable output.`,
 			return nil
 		},
 	}
+}
+
+// -------------------------------------------------------------------------
+// `tukituki debug [target-name]`
+// -------------------------------------------------------------------------
+
+func newDebugCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "debug [target-name]",
+		Short:  "Show the resolved configuration and shell command for targets",
+		Hidden: true,
+		Args:   cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runDirPath := resolveRunDir()
+			projectRoot := resolveProjectRoot()
+
+			targets := loadTargetsOrDie(runDirPath, projectRoot)
+
+			if len(args) == 1 {
+				t := findTarget(targets, args[0])
+				targets = []config.RunTarget{t}
+			}
+
+			shell := os.Getenv("SHELL")
+			if shell == "" {
+				shell = "/bin/sh"
+			}
+
+			if jsonOutput {
+				type debugEntry struct {
+					Name     string            `json:"name"`
+					Command  string            `json:"command"`
+					Args     []string          `json:"args"`
+					Workdir  string            `json:"workdir,omitempty"`
+					Env      map[string]string `json:"env,omitempty"`
+					Cleanup  []string          `json:"cleanup,omitempty"`
+					ShellCmd string            `json:"shell_cmd"`
+					ShellArg string            `json:"shell_arg"`
+				}
+				entries := make([]debugEntry, 0, len(targets))
+				for _, t := range targets {
+					shellLine := process.BuildShellCmd(t.Command, t.Args)
+					entries = append(entries, debugEntry{
+						Name:     t.Name,
+						Command:  t.Command,
+						Args:     t.Args,
+						Workdir:  t.Workdir,
+						Env:      t.Env,
+						Cleanup:  t.Cleanup,
+						ShellCmd: shell + " -l -c",
+						ShellArg: shellLine,
+					})
+				}
+				if len(args) == 1 && len(entries) == 1 {
+					return writeJSON(entries[0])
+				}
+				return writeJSON(entries)
+			}
+
+			for i, t := range targets {
+				if i > 0 {
+					fmt.Println()
+				}
+				shellLine := process.BuildShellCmd(t.Command, t.Args)
+
+				fmt.Printf("Target:   %s\n", t.Name)
+				fmt.Printf("Command:  %s\n", t.Command)
+				if len(t.Args) > 0 {
+					for j, a := range t.Args {
+						if a == "" {
+							fmt.Printf("  arg[%d]:  \"\" (empty string)\n", j)
+						} else {
+							fmt.Printf("  arg[%d]:  %s\n", j, a)
+						}
+					}
+				}
+				if t.Workdir != "" {
+					wd := t.Workdir
+					if !filepath.IsAbs(wd) {
+						wd = filepath.Join(projectRoot, wd)
+					}
+					fmt.Printf("Workdir:  %s\n", wd)
+				}
+				if len(t.Env) > 0 {
+					fmt.Println("Env:")
+					for k, v := range t.Env {
+						fmt.Printf("  %s=%s\n", k, v)
+					}
+				}
+				if len(t.Cleanup) > 0 {
+					fmt.Println("Cleanup:")
+					for _, c := range t.Cleanup {
+						fmt.Printf("  %s\n", c)
+					}
+				}
+				fmt.Printf("Shell:    %s -l -c %s\n", shell, shellLine)
+			}
+			return nil
+		},
+	}
+	return cmd
 }
 
 // -------------------------------------------------------------------------

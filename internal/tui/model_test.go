@@ -72,6 +72,7 @@ func (m *mockManager) Restart(_ context.Context, _ string) error { return nil }
 func (m *mockManager) DumpLog(_ string, _ string) error          { return nil }
 func (m *mockManager) ClearLog(_ string) error                   { return nil }
 func (m *mockManager) StopAll() error                            { return nil }
+func (m *mockManager) UpdateTargets(_ []config.RunTarget)        {}
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ func TestNewModel_InitializesCorrectly(t *testing.T) {
 	}
 	mgr := newMockManager([]string{"backend", "worker"})
 
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	if len(m.targets) != 2 {
 		t.Errorf("expected 2 targets, got %d", len(m.targets))
@@ -112,7 +113,7 @@ func TestModel_Init_ReturnsCmds(t *testing.T) {
 		{Name: "alpha", Command: "true"},
 	}
 	mgr := newMockManager([]string{"alpha"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	cmd := m.Init()
 	if cmd == nil {
@@ -125,7 +126,7 @@ func TestModel_WindowResize_UpdatesDimensions(t *testing.T) {
 		{Name: "svc", Command: "true"},
 	}
 	mgr := newMockManager([]string{"svc"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	// Simulate a window size message.
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -152,7 +153,7 @@ func TestModel_LogLineMsg_AppendsToBuffer(t *testing.T) {
 		{Name: "svc", Command: "true"},
 	}
 	mgr := newMockManager([]string{"svc"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	// Trigger resize so viewport has usable dimensions.
 	m, _ = func() (Model, tea.Cmd) {
@@ -187,7 +188,7 @@ func TestModel_StatusTick_RefreshesStatuses(t *testing.T) {
 	mgr := newMockManager([]string{"svc"})
 	mgr.statuses["svc"] = state.StatusStopped
 
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	// Simulate a status tick.
 	newModel, _ := m.Update(statusTickMsg{})
@@ -203,7 +204,7 @@ func TestModel_QuitKey_SetsQuitting(t *testing.T) {
 		{Name: "svc", Command: "true"},
 	}
 	mgr := newMockManager([]string{"svc"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	updated := newModel.(Model)
@@ -221,7 +222,7 @@ func TestModel_QuitAllKey_SetsStopAll(t *testing.T) {
 		{Name: "svc", Command: "true"},
 	}
 	mgr := newMockManager([]string{"svc"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Q")})
 	updated := newModel.(Model)
@@ -241,7 +242,7 @@ func TestModel_Navigation_ChangesSelection(t *testing.T) {
 		{Name: "gamma", Command: "true"},
 	}
 	mgr := newMockManager([]string{"alpha", "beta", "gamma"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	// Press down.
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -272,7 +273,7 @@ func TestModel_View_DoesNotPanic(t *testing.T) {
 		{Name: "svc", Command: "true"},
 	}
 	mgr := newMockManager([]string{"svc"})
-	m := NewModel(targets, mgr)
+	m := NewModel(targets, mgr, "", "")
 
 	// Resize first so width/height are set.
 	nm, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

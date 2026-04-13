@@ -75,6 +75,14 @@ func NewManager(targets []config.RunTarget, stateDir string, projectRoot string)
 	return m, nil
 }
 
+// UpdateTargets replaces the target list so that subsequent Start/Restart
+// calls use the latest configuration.
+func (m *Manager) UpdateTargets(targets []config.RunTarget) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.targets = targets
+}
+
 // targetByName returns the RunTarget with the given name, or an error.
 func (m *Manager) targetByName(name string) (config.RunTarget, error) {
 	for _, t := range m.targets {
@@ -120,7 +128,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	shellLine := buildShellCmd(target.Command, target.Args)
+	shellLine := BuildShellCmd(target.Command, target.Args)
 	// We intentionally use exec.Command (not exec.CommandContext) so that
 	// the spawned process is NOT killed when the TUI or CLI exits.
 	cmd := exec.Command(shell, "-l", "-c", shellLine)
@@ -168,6 +176,37 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	go func() {
 		f.Close() // the goroutine below opens its own handle for tailing
 		err := cmd.Wait()
+
+		code := 0
+		var newStatus state.Status
+		if err != nil {
+			if exitErr, ok2 := err.(*exec.ExitError); ok2 {
+				code = exitErr.ExitCode()
+				newStatus = state.StatusFailed
+			} else {
+				newStatus = state.StatusStopped
+			}
+		} else {
+			newStatus = state.StatusStopped
+		}
+
+		// Append exit message to the log file so the tailer picks it up
+		// in order, after all process output.
+		m.mu.RLock()
+		logFilePath := ""
+		if ps, ok := m.st.Processes[name]; ok {
+			logFilePath = ps.LogFile
+		}
+		m.mu.RUnlock()
+
+		if logFilePath != "" {
+			if lf, openErr := os.OpenFile(logFilePath, os.O_APPEND|os.O_WRONLY, 0o644); openErr == nil {
+				fmt.Fprintf(lf, "\n(Process exited at %s, exit code: %d)\n",
+					time.Now().Format("2006-01-02 15:04:05"), code)
+				lf.Close()
+			}
+		}
+
 		m.mu.Lock()
 		defer m.mu.Unlock()
 
@@ -175,17 +214,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		if !ok {
 			return
 		}
-		code := 0
-		if err != nil {
-			if exitErr, ok2 := err.(*exec.ExitError); ok2 {
-				code = exitErr.ExitCode()
-				p.Status = state.StatusFailed
-			} else {
-				p.Status = state.StatusStopped
-			}
-		} else {
-			p.Status = state.StatusStopped
-		}
+		p.Status = newStatus
 		p.ExitCode = &code
 		_ = m.st.Save()
 	}()
@@ -540,9 +569,9 @@ func (m *Manager) AttachToExisting() error {
 	return m.st.Save()
 }
 
-// buildShellCmd builds a shell command string from a command and its arguments,
+// BuildShellCmd builds a shell command string from a command and its arguments,
 // properly escaping each argument for safe use with /bin/sh -c.
-func buildShellCmd(command string, args []string) string {
+func BuildShellCmd(command string, args []string) string {
 	parts := make([]string, 0, 1+len(args))
 	parts = append(parts, shellEscape(command))
 	for _, a := range args {
@@ -554,6 +583,9 @@ func buildShellCmd(command string, args []string) string {
 // shellEscape wraps a string in single quotes if it contains any characters
 // that the shell would otherwise interpret specially.
 func shellEscape(s string) string {
+	if s == "" {
+		return "''"
+	}
 	for _, r := range s {
 		safe := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
 			(r >= '0' && r <= '9') ||
