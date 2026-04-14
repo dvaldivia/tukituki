@@ -100,6 +100,9 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	if target.ParseError != "" {
+		return fmt.Errorf("target %q has a config error: %s", name, target.ParseError)
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -311,8 +314,12 @@ func (m *Manager) startLogTailer(name, logFile string) {
 }
 
 // StartAll starts all targets that aren't already running.
+// Targets with parse errors are silently skipped.
 func (m *Manager) StartAll(ctx context.Context) error {
 	for _, t := range m.targets {
+		if t.ParseError != "" {
+			continue
+		}
 		if err := m.Start(ctx, t.Name); err != nil {
 			return fmt.Errorf("start %s: %w", t.Name, err)
 		}

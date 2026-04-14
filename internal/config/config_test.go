@@ -81,9 +81,18 @@ func TestLoadTargets_InvalidYAML(t *testing.T) {
 name: [this is: {not: valid yaml for a string
 `)
 
-	_, err := LoadTargets(dir)
-	if err == nil {
-		t.Fatal("expected error for invalid YAML, got nil")
+	targets, err := LoadTargets(dir)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(targets))
+	}
+	if targets[0].Name != "bad" {
+		t.Errorf("expected name derived from filename %q, got %q", "bad", targets[0].Name)
+	}
+	if targets[0].ParseError == "" {
+		t.Fatal("expected ParseError to be set for invalid YAML")
 	}
 }
 

@@ -30,13 +30,23 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+const tuiRingBufferSize = 10000
+
 // logBuffer holds the accumulated log lines for a single target.
+// It acts as a ring buffer, dropping the oldest lines when the limit is reached.
 type logBuffer struct {
 	lines []string
 }
 
-func (b *logBuffer) append(line string) {
+// append adds a line and returns how many old lines were dropped.
+func (b *logBuffer) append(line string) int {
 	b.lines = append(b.lines, line)
+	if len(b.lines) > tuiRingBufferSize {
+		dropped := len(b.lines) - tuiRingBufferSize
+		b.lines = b.lines[dropped:]
+		return dropped
+	}
+	return 0
 }
 
 func (b *logBuffer) content() string {
@@ -251,6 +261,10 @@ func (m Model) Init() tea.Cmd {
 
 	// Start watching logs for each target and seed the buffer from existing lines.
 	for _, t := range m.targets {
+		if t.ParseError != "" {
+			m.logs[t.Name].append(fmt.Sprintf("ERROR: failed to load config — %s", t.ParseError))
+			continue
+		}
 		existing := m.manager.GetLogLines(t.Name)
 		for _, line := range existing {
 			m.logs[t.Name].append(line)
@@ -350,21 +364,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selected > 0 {
 					m.selected--
 					m.loadSelectedLogs()
-					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Down):
 				if m.selected < len(m.targets)-1 {
 					m.selected++
 					m.loadSelectedLogs()
-					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Tab):
 				if len(m.targets) > 0 {
 					m.selected = (m.selected + 1) % len(m.targets)
 					m.loadSelectedLogs()
-					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Restart):
@@ -455,9 +466,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logLineMsg:
 		buf, ok := m.logs[msg.target]
 		if ok {
-			buf.append(msg.line)
+			dropped := buf.append(msg.line)
 			// If this is the currently selected target, update viewport.
 			if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+				// Adjust search match indices when old lines were dropped.
+				if dropped > 0 && len(m.searchMatches) > 0 {
+					adjusted := m.searchMatches[:0]
+					for _, idx := range m.searchMatches {
+						if newIdx := idx - dropped; newIdx >= 0 {
+							adjusted = append(adjusted, newIdx)
+						}
+					}
+					m.searchMatches = adjusted
+					if m.searchMatchIdx >= len(m.searchMatches) {
+						m.searchMatchIdx = 0
+					}
+				}
 				wasAtBottom := m.viewport.AtBottom()
 				// Track new matching line when search is active.
 				if m.searchMode && m.searchQuery != "" {
@@ -871,9 +895,9 @@ func (m *Model) loadSelectedLogs() {
 // set from disk. It sets up log buffers / watches for added targets, cleans up
 // removed targets, and updates the manager's target list.
 func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
-	oldNames := make(map[string]bool, len(m.targets))
+	oldByName := make(map[string]config.RunTarget, len(m.targets))
 	for _, t := range m.targets {
-		oldNames[t.Name] = true
+		oldByName[t.Name] = t
 	}
 	newNames := make(map[string]bool, len(newTargets))
 	for _, t := range newTargets {
@@ -882,14 +906,36 @@ func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
 
 	var cmds []tea.Cmd
 
-	// Set up log buffers and watches for added targets.
+	// Set up log buffers and watches for added targets, and handle
+	// transitions between errored ↔ valid for existing targets.
 	for _, t := range newTargets {
-		if !oldNames[t.Name] {
+		old, existed := oldByName[t.Name]
+		if !existed {
+			// Brand-new target.
 			m.logs[t.Name] = &logBuffer{}
 			m.statuses[t.Name] = state.StatusUnknown
+			if t.ParseError != "" {
+				m.logs[t.Name].append(fmt.Sprintf("ERROR: failed to load config — %s", t.ParseError))
+			} else {
+				ch := m.manager.WatchLogLines(t.Name)
+				m.logWatches[t.Name] = ch
+				cmds = append(cmds, waitForLogLine(ch, t.Name))
+			}
+		} else if old.ParseError != "" && t.ParseError == "" {
+			// Was broken, now fixed — reset buffer and start watching.
+			m.logs[t.Name] = &logBuffer{}
 			ch := m.manager.WatchLogLines(t.Name)
 			m.logWatches[t.Name] = ch
 			cmds = append(cmds, waitForLogLine(ch, t.Name))
+		} else if old.ParseError == "" && t.ParseError != "" {
+			// Was valid, now broken — replace buffer with error.
+			m.logs[t.Name] = &logBuffer{}
+			m.logs[t.Name].append(fmt.Sprintf("ERROR: failed to load config — %s", t.ParseError))
+			delete(m.logWatches, t.Name)
+		} else if old.ParseError != "" && t.ParseError != "" {
+			// Still broken — update the error message.
+			m.logs[t.Name] = &logBuffer{}
+			m.logs[t.Name].append(fmt.Sprintf("ERROR: failed to load config — %s", t.ParseError))
 		}
 	}
 

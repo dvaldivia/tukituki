@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -37,6 +38,9 @@ type RunTarget struct {
 	// or killing stray child processes.  Each command is run in sequence;
 	// failures are logged but do not abort remaining cleanup steps.
 	Cleanup []string `yaml:"cleanup"`
+	// ParseError is set when the YAML file could not be parsed. The target
+	// will appear in the TUI with the error displayed but cannot be started.
+	ParseError string `yaml:"-"`
 }
 
 // LoadTargets reads all *.yaml and *.yml files from runDir and returns the
@@ -72,7 +76,13 @@ func LoadTargets(runDir string) ([]RunTarget, error) {
 	for _, file := range files {
 		t, err := parseFile(file)
 		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", file, err)
+			// Record the error but keep going so the TUI can display it.
+			name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+			targets = append(targets, RunTarget{
+				Name:       name,
+				ParseError: fmt.Sprintf("%s: %v", filepath.Base(file), err),
+			})
+			continue
 		}
 		targets = append(targets, t)
 	}
