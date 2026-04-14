@@ -360,21 +360,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selected > 0 {
 					m.selected--
 					m.loadSelectedLogs()
-					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Down):
 				if m.selected < len(m.targets)-1 {
 					m.selected++
 					m.loadSelectedLogs()
-					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Tab):
 				if len(m.targets) > 0 {
 					m.selected = (m.selected + 1) % len(m.targets)
 					m.loadSelectedLogs()
-					cmds = append(cmds, tea.ClearScreen)
 				}
 
 			case matchKey(msg, m.keys.Restart):
