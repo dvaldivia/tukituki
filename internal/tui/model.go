@@ -30,13 +30,23 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+const tuiRingBufferSize = 10000
+
 // logBuffer holds the accumulated log lines for a single target.
+// It acts as a ring buffer, dropping the oldest lines when the limit is reached.
 type logBuffer struct {
 	lines []string
 }
 
-func (b *logBuffer) append(line string) {
+// append adds a line and returns how many old lines were dropped.
+func (b *logBuffer) append(line string) int {
 	b.lines = append(b.lines, line)
+	if len(b.lines) > tuiRingBufferSize {
+		dropped := len(b.lines) - tuiRingBufferSize
+		b.lines = b.lines[dropped:]
+		return dropped
+	}
+	return 0
 }
 
 func (b *logBuffer) content() string {
@@ -455,9 +465,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logLineMsg:
 		buf, ok := m.logs[msg.target]
 		if ok {
-			buf.append(msg.line)
+			dropped := buf.append(msg.line)
 			// If this is the currently selected target, update viewport.
 			if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+				// Adjust search match indices when old lines were dropped.
+				if dropped > 0 && len(m.searchMatches) > 0 {
+					adjusted := m.searchMatches[:0]
+					for _, idx := range m.searchMatches {
+						if newIdx := idx - dropped; newIdx >= 0 {
+							adjusted = append(adjusted, newIdx)
+						}
+					}
+					m.searchMatches = adjusted
+					if m.searchMatchIdx >= len(m.searchMatches) {
+						m.searchMatchIdx = 0
+					}
+				}
 				wasAtBottom := m.viewport.AtBottom()
 				// Track new matching line when search is active.
 				if m.searchMode && m.searchQuery != "" {
