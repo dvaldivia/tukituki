@@ -170,6 +170,7 @@ cleanup:
 | `env` | no | Extra environment variables (merged with the parent env) |
 | `description` | no | Human-readable label shown in `list` and `status` |
 | `cleanup` | no | Shell commands run after the process stops |
+| `otel` | no | Enable OpenTelemetry log collection for this target (`true`/`false`) |
 
 ### How processes run
 
@@ -186,6 +187,74 @@ cleanup:
 ```
 
 Failures are logged but do not abort remaining cleanup steps.
+
+## OpenTelemetry error collection
+
+tukituki includes a built-in OTLP log receiver that can collect OpenTelemetry log data from your services and surface errors (or any severity you choose) in a single view.
+
+### Enabling OTel for a target
+
+Add `otel: true` to any run target:
+
+```yaml
+name: api
+command: go
+args:
+  - run
+  - ./cmd/server
+otel: true
+```
+
+When at least one target has `otel: true`, tukituki automatically:
+
+1. Starts a bundled OTLP log receiver as a background process
+2. Injects `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME` into the target's environment
+3. Adds a virtual **otel-errors** entry at the bottom of the TUI sidebar
+
+The collector filters incoming log records by severity and displays matching entries in the format:
+
+```
+[api] Connection refused to database at localhost:5432
+[worker] Failed to process job batch-1234: timeout
+```
+
+### Severity filtering
+
+By default only ERROR-level logs and above are shown. Change the threshold with:
+
+```sh
+tukituki --otel-severity warn      # also show warnings
+tukituki --otel-severity info      # show info and above
+```
+
+Valid severity levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal`.
+
+### Protocol selection
+
+The receiver uses gRPC (port 4317) by default. To use HTTP instead:
+
+```sh
+tukituki --otel-protocol http      # listens on port 4318
+```
+
+Override the port with `--otel-port`:
+
+```sh
+tukituki --otel-port 14317         # custom gRPC port
+```
+
+### Headless access
+
+The OTel collector works with all headless subcommands:
+
+```sh
+tukituki logs otel-errors --no-follow   # read collected errors
+tukituki status otel-errors             # check collector status
+```
+
+### Detach behavior
+
+The OTel collector process survives TUI detach (`q`) just like regular targets. When you reattach, tukituki reconnects to the running collector.
 
 ## State and logs
 
@@ -208,6 +277,9 @@ Flags and environment variables (via `TUKITUKI_` prefix) override defaults:
 | `--state-dir` | `TUKITUKI_STATE_DIR` | `.tukituki` | Directory for state file and logs |
 | `--config` | — | `.tukitukirc.yaml` | Config file path |
 | `--json` | — | false | Emit JSON output (all subcommands) |
+| `--otel-protocol` | `TUKITUKI_OTEL_PROTOCOL` | `grpc` | OTel receiver protocol (`grpc` or `http`) |
+| `--otel-severity` | `TUKITUKI_OTEL_SEVERITY` | `error` | Minimum OTel log severity to display |
+| `--otel-port` | `TUKITUKI_OTEL_PORT` | auto | OTel receiver port (4317 for gRPC, 4318 for HTTP) |
 
 You can also place a `.tukitukirc.yaml` in the project root or `$HOME`:
 

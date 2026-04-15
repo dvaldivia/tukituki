@@ -35,6 +35,16 @@ const (
 	tailPollDelay  = 100 * time.Millisecond
 )
 
+// OtelConfig holds the OpenTelemetry collector configuration.
+type OtelConfig struct {
+	Port     int
+	Protocol string
+	Severity string
+}
+
+// OtelTargetName is the fixed name used for the virtual OTel collector target.
+const OtelTargetName = "otel-errors"
+
 // Manager owns the lifecycle of all managed processes.
 type Manager struct {
 	targets     []config.RunTarget
@@ -42,6 +52,8 @@ type Manager struct {
 	stateDir    string // .tukituki/ directory
 	logsDir     string // .tukituki/logs/ directory
 	projectRoot string // absolute path where tukituki was invoked (workdirs are relative to this)
+
+	otelCfg *OtelConfig
 
 	mu       sync.RWMutex
 	logLines map[string][]string           // in-memory ring buffer of last 1000 lines per target
@@ -75,6 +87,11 @@ func NewManager(targets []config.RunTarget, stateDir string, projectRoot string)
 	return m, nil
 }
 
+// SetOtelConfig sets the OpenTelemetry collector configuration.
+func (m *Manager) SetOtelConfig(cfg OtelConfig) {
+	m.otelCfg = &cfg
+}
+
 // UpdateTargets replaces the target list so that subsequent Start/Restart
 // calls use the latest configuration.
 func (m *Manager) UpdateTargets(targets []config.RunTarget) {
@@ -100,10 +117,18 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	return m.StartTarget(ctx, target)
+}
+
+// StartTarget starts a RunTarget as a detached background process.
+// Unlike Start, it does not look up the target by name, so it can be used
+// for synthetic (virtual) targets that are not in the target list.
+func (m *Manager) StartTarget(ctx context.Context, target config.RunTarget) error {
 	if target.ParseError != "" {
-		return fmt.Errorf("target %q has a config error: %s", name, target.ParseError)
+		return fmt.Errorf("target %q has a config error: %s", target.Name, target.ParseError)
 	}
 
+	name := target.Name
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -154,6 +179,15 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	cmd.Env = os.Environ()
 	for k, v := range target.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+
+	// Inject OpenTelemetry environment variables when OTel is enabled.
+	if target.Otel && m.otelCfg != nil {
+		endpoint := fmt.Sprintf("http://localhost:%d", m.otelCfg.Port)
+		cmd.Env = append(cmd.Env,
+			"OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint,
+			"OTEL_SERVICE_NAME="+name,
+		)
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -574,6 +608,71 @@ func (m *Manager) AttachToExisting() error {
 	}
 
 	return m.st.Save()
+}
+
+// EnsureOtelCollector starts the bundled OTel collector if any target has
+// Otel enabled and the collector is not already running. It adds a virtual
+// "otel-errors" target to the Manager's target list.
+func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
+	if m.otelCfg == nil || !config.HasOtelTarget(m.targets) {
+		return nil
+	}
+
+	// Already running?
+	m.mu.RLock()
+	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
+		m.mu.RUnlock()
+		return nil
+	}
+	m.mu.RUnlock()
+
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	target := config.RunTarget{
+		Name:        OtelTargetName,
+		Command:     exe,
+		Args:        []string{"otel-collector", "--protocol", m.otelCfg.Protocol, "--severity", m.otelCfg.Severity, "--port", fmt.Sprintf("%d", m.otelCfg.Port)},
+		Description: "OpenTelemetry error collector",
+		Virtual:     true,
+	}
+
+	// Add the virtual target to the list if it isn't already there.
+	found := false
+	for _, t := range m.targets {
+		if t.Name == OtelTargetName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		m.targets = append(m.targets, target)
+	}
+
+	return m.StartTarget(ctx, target)
+}
+
+// StopOtelCollector stops the OTel collector if it is running.
+func (m *Manager) StopOtelCollector() error {
+	m.mu.RLock()
+	_, exists := m.st.Processes[OtelTargetName]
+	m.mu.RUnlock()
+
+	if !exists {
+		return nil
+	}
+	return m.Stop(OtelTargetName)
+}
+
+// GetTargets returns the current target list (including virtual targets).
+func (m *Manager) GetTargets() []config.RunTarget {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]config.RunTarget, len(m.targets))
+	copy(out, m.targets)
+	return out
 }
 
 // BuildShellCmd builds a shell command string from a command and its arguments,

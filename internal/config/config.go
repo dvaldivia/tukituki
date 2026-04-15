@@ -38,9 +38,16 @@ type RunTarget struct {
 	// or killing stray child processes.  Each command is run in sequence;
 	// failures are logged but do not abort remaining cleanup steps.
 	Cleanup []string `yaml:"cleanup"`
+	// Otel enables OpenTelemetry log collection for this target.  When true,
+	// tukituki injects OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_SERVICE_NAME into the
+	// process environment and ensures a bundled OTLP receiver is running.
+	Otel bool `yaml:"otel"`
 	// ParseError is set when the YAML file could not be parsed. The target
 	// will appear in the TUI with the error displayed but cannot be started.
 	ParseError string `yaml:"-"`
+	// Virtual marks targets that are synthesised by tukituki (e.g. the OTel
+	// collector) rather than loaded from a .run/*.yaml file.
+	Virtual bool `yaml:"-"`
 }
 
 // LoadTargets reads all *.yaml and *.yml files from runDir and returns the
@@ -92,6 +99,16 @@ func LoadTargets(runDir string) ([]RunTarget, error) {
 	})
 
 	return targets, nil
+}
+
+// HasOtelTarget reports whether any target in the list has Otel enabled.
+func HasOtelTarget(targets []RunTarget) bool {
+	for _, t := range targets {
+		if t.Otel {
+			return true
+		}
+	}
+	return false
 }
 
 func parseFile(path string) (RunTarget, error) {

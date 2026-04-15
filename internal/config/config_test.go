@@ -103,6 +103,52 @@ func TestLoadTargets_MissingDir(t *testing.T) {
 	}
 }
 
+func TestLoadTargets_OtelField(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, filepath.Join(dir, "svc.yaml"), `
+name: svc
+command: echo
+otel: true
+`)
+	targets, err := LoadTargets(dir)
+	if err != nil {
+		t.Fatalf("LoadTargets: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(targets))
+	}
+	if !targets[0].Otel {
+		t.Error("expected Otel=true")
+	}
+}
+
+func TestLoadTargets_OtelDefaultFalse(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, filepath.Join(dir, "plain.yaml"), `
+name: plain
+command: echo
+`)
+	targets, err := LoadTargets(dir)
+	if err != nil {
+		t.Fatalf("LoadTargets: %v", err)
+	}
+	if targets[0].Otel {
+		t.Error("expected Otel=false by default")
+	}
+}
+
+func TestHasOtelTarget(t *testing.T) {
+	none := []RunTarget{{Name: "a"}, {Name: "b"}}
+	if HasOtelTarget(none) {
+		t.Error("expected false when no target has Otel")
+	}
+
+	some := []RunTarget{{Name: "a"}, {Name: "b", Otel: true}}
+	if !HasOtelTarget(some) {
+		t.Error("expected true when one target has Otel")
+	}
+}
+
 // helpers
 
 func writeYAML(t *testing.T, path, content string) {

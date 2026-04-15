@@ -28,6 +28,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/dvaldivia/tukituki/internal/config"
+	otelPkg "github.com/dvaldivia/tukituki/internal/otel"
 	"github.com/dvaldivia/tukituki/internal/process"
 	"github.com/dvaldivia/tukituki/internal/tui"
 	"github.com/spf13/cobra"
@@ -38,10 +39,13 @@ import (
 var Version = "dev"
 
 var (
-	cfgFile    string
-	runDir     string
-	stateDir   string
-	jsonOutput bool
+	cfgFile      string
+	runDir       string
+	stateDir     string
+	jsonOutput   bool
+	otelProtocol string
+	otelSeverity string
+	otelPort     int
 )
 
 // rootCmd is the base command; when called with no subcommand it starts the TUI.
@@ -93,10 +97,19 @@ func init() {
 		"directory for state file and logs (env: TUKITUKI_STATE_DIR, default: .tukituki)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false,
 		"emit machine-readable JSON instead of formatted text (errors also written as JSON to stderr)")
+	rootCmd.PersistentFlags().StringVar(&otelProtocol, "otel-protocol", "grpc",
+		"OTel receiver protocol: grpc or http (env: TUKITUKI_OTEL_PROTOCOL)")
+	rootCmd.PersistentFlags().StringVar(&otelSeverity, "otel-severity", "error",
+		"minimum OTel log severity to display (env: TUKITUKI_OTEL_SEVERITY)")
+	rootCmd.PersistentFlags().IntVar(&otelPort, "otel-port", 0,
+		"OTel receiver port; 0 = auto (4317 for grpc, 4318 for http) (env: TUKITUKI_OTEL_PORT)")
 
 	// Bind persistent flags to viper so env-vars and config file override defaults.
 	_ = viper.BindPFlag("run_dir", rootCmd.PersistentFlags().Lookup("run-dir"))
 	_ = viper.BindPFlag("state_dir", rootCmd.PersistentFlags().Lookup("state-dir"))
+	_ = viper.BindPFlag("otel_protocol", rootCmd.PersistentFlags().Lookup("otel-protocol"))
+	_ = viper.BindPFlag("otel_severity", rootCmd.PersistentFlags().Lookup("otel-severity"))
+	_ = viper.BindPFlag("otel_port", rootCmd.PersistentFlags().Lookup("otel-port"))
 
 	// Register subcommands.
 	rootCmd.AddCommand(
@@ -109,6 +122,7 @@ func init() {
 		newStatusCmd(),
 		newLogsCmd(),
 		newDebugCmd(),
+		newOtelCollectorCmd(),
 	)
 }
 
@@ -159,6 +173,35 @@ func resolveProjectRoot() string {
 		return "."
 	}
 	return root
+}
+
+// resolveOtelProtocol returns the effective OTel protocol ("grpc" or "http").
+func resolveOtelProtocol() string {
+	if p := viper.GetString("otel_protocol"); p != "" {
+		return p
+	}
+	return "grpc"
+}
+
+// resolveOtelSeverity returns the effective OTel severity filter name.
+func resolveOtelSeverity() string {
+	if s := viper.GetString("otel_severity"); s != "" {
+		return s
+	}
+	return "error"
+}
+
+// resolveOtelPort returns the effective OTel receiver port.
+// 0 means auto (4317 for gRPC, 4318 for HTTP).
+func resolveOtelPort() int {
+	p := viper.GetInt("otel_port")
+	if p != 0 {
+		return p
+	}
+	if resolveOtelProtocol() == "http" {
+		return 4318
+	}
+	return 4317
 }
 
 // isTTY reports whether stdout is connected to a terminal.
@@ -219,10 +262,20 @@ func loadTargetsOrDie(runDirPath, projectRoot string) []config.RunTarget {
 }
 
 // findTarget returns the named target or exits with an error listing available names.
+// It also recognises the virtual otel-errors target if the manager has it.
 func findTarget(targets []config.RunTarget, name string) config.RunTarget {
 	for _, t := range targets {
 		if t.Name == name {
 			return t
+		}
+	}
+	// Accept the virtual otel-errors target even though it is not in the
+	// YAML-loaded list — the Manager adds it at runtime.
+	if name == process.OtelTargetName {
+		return config.RunTarget{
+			Name:        process.OtelTargetName,
+			Description: "OpenTelemetry error collector",
+			Virtual:     true,
 		}
 	}
 	names := make([]string, 0, len(targets))
@@ -236,12 +289,18 @@ func findTarget(targets []config.RunTarget, name string) config.RunTarget {
 	return config.RunTarget{} // unreachable
 }
 
-// newManagerOrDie creates a process manager and exits on error.
+// newManagerOrDie creates a process manager, configures OTel settings, and
+// exits on error.
 func newManagerOrDie(targets []config.RunTarget, stateDirPath string, projectRoot string) *process.Manager {
 	mgr, err := process.NewManager(targets, stateDirPath, projectRoot)
 	if err != nil {
 		exitError(fmt.Sprintf("creating process manager: %v", err), nil)
 	}
+	mgr.SetOtelConfig(process.OtelConfig{
+		Port:     resolveOtelPort(),
+		Protocol: resolveOtelProtocol(),
+		Severity: resolveOtelSeverity(),
+	})
 	return mgr
 }
 
@@ -309,7 +368,15 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: some processes failed to start: %v\n", err)
 	}
 
-	stopAll, err := tui.Start(targets, mgr, runDirPath, projectRoot)
+	// Start the OTel collector if any target has otel: true.
+	if err := mgr.EnsureOtelCollector(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not start OTel collector: %v\n", err)
+	}
+
+	// Use the Manager's target list which may now include the virtual otel-errors entry.
+	allTargets := mgr.GetTargets()
+
+	stopAll, err := tui.Start(allTargets, mgr, runDirPath, projectRoot)
 	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
 	}
@@ -601,16 +668,22 @@ Use --json for machine-readable output.`,
 				return fmt.Errorf("start all: %w", err)
 			}
 
+			// Start the OTel collector if any target has otel: true.
+			if err := mgr.EnsureOtelCollector(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not start OTel collector: %v\n", err)
+			}
+
+			allTargets := mgr.GetTargets()
 			if jsonOutput {
-				results := make([]actionResult, 0, len(targets))
+				results := make([]actionResult, 0, len(allTargets))
 				statuses := mgr.GetAllStatuses()
-				for _, t := range targets {
+				for _, t := range allTargets {
 					st := statuses[t.Name]
 					results = append(results, actionResult{Name: t.Name, Status: string(st)})
 				}
 				return writeJSON(results)
 			}
-			for _, t := range targets {
+			for _, t := range allTargets {
 				printStartedText(mgr, t.Name)
 			}
 			return nil
@@ -923,6 +996,45 @@ and AI agents).  Use --tail to control how many buffered lines are shown.`,
 		"print buffered log lines and exit without streaming (safe for scripts and agents)")
 	cmd.Flags().IntVar(&tail, "tail", 100,
 		"number of buffered log lines to print (0 = all)")
+
+	return cmd
+}
+
+// -------------------------------------------------------------------------
+// `tukituki otel-collector` (hidden — spawned automatically by the manager)
+// -------------------------------------------------------------------------
+
+func newOtelCollectorCmd() *cobra.Command {
+	var protocol string
+	var severity string
+	var port int
+
+	cmd := &cobra.Command{
+		Use:    "otel-collector",
+		Short:  "Run the embedded OTLP log receiver (internal use)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			minSev, err := otelPkg.ParseSeverity(severity)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+
+			c := &otelPkg.Collector{
+				Port:        port,
+				Protocol:    protocol,
+				MinSeverity: minSev,
+			}
+			return c.Run(ctx)
+		},
+	}
+
+	cmd.Flags().StringVar(&protocol, "protocol", "grpc", "receiver protocol: grpc or http")
+	cmd.Flags().StringVar(&severity, "severity", "error", "minimum log severity to emit")
+	cmd.Flags().IntVar(&port, "port", 4317, "port to listen on")
 
 	return cmd
 }

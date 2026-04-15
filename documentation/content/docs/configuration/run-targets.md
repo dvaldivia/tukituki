@@ -24,6 +24,7 @@ tukituki loads every file matching `*.yaml` or `*.yml` inside the run directory 
 | `env` | map of strings | no | `{}` | Additional environment variables injected into the process. Added on top of the full parent environment. |
 | `description` | string | no | `""` | Human-readable description shown in the TUI and `tukituki status` output. |
 | `cleanup` | list of strings | no | `[]` | Shell commands run sequentially after the process stops. Useful for releasing ports or removing lock files. |
+| `otel` | bool | no | `false` | Enable OpenTelemetry log collection. When `true`, tukituki injects `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME` into the process and starts a bundled OTLP receiver. See the [OpenTelemetry guide]({{< relref "/docs/guides/opentelemetry" >}}). |
 
 ## Annotated Example
 

@@ -672,8 +672,15 @@ func (m Model) renderLeft() string {
 	// Build each row as a plain string (icon rendered, text plain), then apply
 	// the row style ONCE — this avoids nested ANSI that confuses lipgloss's
 	// width measurement and causes spurious line-wraps inside the container.
+	virtualSepStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
 	var rows []string
+	virtualSepDone := false
 	for i, t := range m.targets {
+		// Render a thin separator before the first virtual target.
+		if t.Virtual && !virtualSepDone {
+			rows = append(rows, virtualSepStyle.Render(fitLine("  ─ collectors ─")))
+			virtualSepDone = true
+		}
 		iconStr := statusIconChar(m.statuses[t.Name]) // raw char, no ANSI
 		label := t.Name
 		// Reserve: cursor(2) + icon(1) + space(1) = 4 chars of prefix.
@@ -939,12 +946,19 @@ func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
 		}
 	}
 
-	// Clean up removed targets.
+	// Clean up removed targets (but not virtual ones — they survive reloads).
 	for _, t := range m.targets {
-		if !newNames[t.Name] {
+		if !newNames[t.Name] && !t.Virtual {
 			delete(m.logs, t.Name)
 			delete(m.statuses, t.Name)
 			delete(m.logWatches, t.Name)
+		}
+	}
+
+	// Preserve virtual targets (e.g. otel-errors) across config reloads.
+	for _, t := range m.targets {
+		if t.Virtual {
+			newTargets = append(newTargets, t)
 		}
 	}
 
