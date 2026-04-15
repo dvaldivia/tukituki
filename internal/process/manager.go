@@ -477,6 +477,7 @@ func (m *Manager) StopAll() error {
 	_, hasOtel := m.st.Processes[OtelTargetName]
 	m.mu.RUnlock()
 	if hasOtel {
+		os.Remove(m.otelPortFile())
 		if err := m.Stop(OtelTargetName); err != nil {
 			fmt.Fprintf(os.Stderr, "stop %s: %v\n", OtelTargetName, err)
 		}
@@ -626,6 +627,30 @@ func (m *Manager) AttachToExisting() error {
 	return m.st.Save()
 }
 
+// otelPortFile returns the path to the file that persists the OTel collector
+// port across detach/reattach cycles.
+func (m *Manager) otelPortFile() string {
+	return filepath.Join(m.stateDir, "otel-port")
+}
+
+// saveOtelPort writes the active collector port to disk.
+func (m *Manager) saveOtelPort(port int) {
+	_ = os.WriteFile(m.otelPortFile(), []byte(fmt.Sprintf("%d", port)), 0o644)
+}
+
+// loadOtelPort reads the persisted collector port, or returns 0 if none.
+func (m *Manager) loadOtelPort() int {
+	data, err := os.ReadFile(m.otelPortFile())
+	if err != nil {
+		return 0
+	}
+	var port int
+	if _, err := fmt.Sscanf(string(data), "%d", &port); err != nil {
+		return 0
+	}
+	return port
+}
+
 // EnsureOtelCollector starts the bundled OTel collector if any target has
 // Otel enabled and the collector is not already running. It adds a virtual
 // "otel-errors" target to the Manager's target list.
@@ -653,18 +678,21 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		m.targets = append(m.targets, target)
 	}
 
-	// If the collector is already running, check whether it matches the
-	// current config.  A stale collector (e.g. from a previous session that
-	// used a different random port) must be stopped and restarted so the
-	// port matches the OTEL_EXPORTER_OTLP_ENDPOINT injected into targets.
+	// Check if the collector is already running from a previous session.
 	m.mu.RLock()
 	alive := false
 	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
 		alive = true
 	}
 	m.mu.RUnlock()
+
 	if alive {
-		// Stop the old collector — it may be on a stale port.
+		// Reuse the persisted port so running services keep working.
+		if savedPort := m.loadOtelPort(); savedPort != 0 {
+			m.otelCfg.Port = savedPort
+			return nil
+		}
+		// No saved port — collector is stale. Restart it.
 		if err := m.Stop(OtelTargetName); err != nil {
 			fmt.Fprintf(os.Stderr, "restart otel collector: stop: %v\n", err)
 		}
@@ -678,7 +706,11 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 	target.Command = exe
 	target.Args = []string{"otel-collector", "--protocol", m.otelCfg.Protocol, "--severity", m.otelCfg.Severity, "--port", fmt.Sprintf("%d", m.otelCfg.Port)}
 
-	return m.StartTarget(ctx, target)
+	if err := m.StartTarget(ctx, target); err != nil {
+		return err
+	}
+	m.saveOtelPort(m.otelCfg.Port)
+	return nil
 }
 
 // StopOtelCollector stops the OTel collector if it is running.
@@ -690,6 +722,7 @@ func (m *Manager) StopOtelCollector() error {
 	if !exists {
 		return nil
 	}
+	os.Remove(m.otelPortFile())
 	return m.Stop(OtelTargetName)
 }
 
