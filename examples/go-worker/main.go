@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
@@ -27,7 +28,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	exp, err := otlploggrpc.New(ctx, otlploggrpc.WithInsecure())
+	// Read endpoint from env and strip scheme — the gRPC client needs host:port.
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "127.0.0.1:4317"
+	}
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+
+	exp, err := otlploggrpc.New(ctx,
+		otlploggrpc.WithInsecure(),
+		otlploggrpc.WithEndpoint(endpoint),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "exporter: %v\n", err)
 		os.Exit(1)

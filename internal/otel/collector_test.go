@@ -396,6 +396,133 @@ otel: true
 	).Run()
 }
 
+// ─── Examples integration test ──────────────────────────────────────────────
+// Builds tukituki, starts the example services from examples/, curls each one
+// to trigger errors, and verifies the otel-errors collector captured exactly
+// the expected error lines from all three services (Go API, Go Worker, Python).
+
+func TestExamples_OtelCollector(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping examples integration test in short mode")
+	}
+
+	root := projectRoot(t)
+	examplesDir := root + "examples"
+
+	// Verify the examples directory exists.
+	if _, err := os.Stat(examplesDir + "/.run"); err != nil {
+		t.Fatalf("examples/.run not found: %v", err)
+	}
+
+	// Build tukituki.
+	binDir := t.TempDir()
+	binPath := binDir + "/tukituki"
+	if out, err := runCmd(root, "go", "build", "-o", binPath, "./cmd/tukituki/").CombinedOutput(); err != nil {
+		t.Fatalf("build tukituki: %v\n%s", err, out)
+	}
+
+	// Use a temp state dir so we don't pollute the real examples/.tukituki.
+	stateDir := t.TempDir() + "/.tukituki"
+
+	// Stop any leftover processes from a previous run.
+	_ = runCmd(examplesDir, binPath, "stop",
+		"--state-dir", examplesDir+"/.tukituki",
+	).Run()
+	// Kill anything still lingering on the hardcoded example ports.
+	for _, port := range []int{8081, 8082, 8083} {
+		killPort(port)
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Start all example services + otel collector.
+	startOut, err := runCmd(examplesDir, binPath, "start",
+		"--state-dir", stateDir,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("tukituki start: %v\n%s", err, startOut)
+	}
+	t.Logf("tukituki start output:\n%s", startOut)
+
+	// Ensure cleanup runs even on failure.
+	defer func() {
+		_ = runCmd(examplesDir, binPath, "stop",
+			"--state-dir", stateDir,
+		).Run()
+	}()
+
+	// Wait for all services to be ready (Go compilation + server startup).
+	// Use longer timeout since `go run .` compiles first.
+	waitForPortTimeout(t, 8081, 30*time.Second) // go-api
+	waitForPortTimeout(t, 8082, 30*time.Second) // go-worker
+	waitForPortTimeout(t, 8083, 30*time.Second) // python-web
+
+	// Trigger errors by curling each service.
+	for _, port := range []int{8081, 8082, 8083} {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+		if err != nil {
+			t.Fatalf("curl port %d: %v", port, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("port %d returned status %d", port, resp.StatusCode)
+		}
+	}
+
+	// Wait for OTel batch processors to flush (default interval ~1s, give extra margin).
+	time.Sleep(5 * time.Second)
+
+	// Read otel-errors log.
+	logData, err := os.ReadFile(stateDir + "/logs/otel-errors.log")
+	if err != nil {
+		// Dump diagnostics.
+		statusOut, _ := runCmd(examplesDir, binPath, "status",
+			"--state-dir", stateDir,
+		).CombinedOutput()
+		t.Logf("tukituki status:\n%s", statusOut)
+		for _, name := range []string{"go-api", "go-worker", "python-web"} {
+			data, _ := os.ReadFile(stateDir + "/logs/" + name + ".log")
+			t.Logf("%s.log:\n%s", name, data)
+		}
+		t.Fatalf("read otel-errors.log: %v", err)
+	}
+
+	output := string(logData)
+	t.Logf("otel-errors.log:\n%s", output)
+
+	// Dump individual service logs for context.
+	for _, name := range []string{"go-api", "go-worker", "python-web"} {
+		data, _ := os.ReadFile(stateDir + "/logs/" + name + ".log")
+		t.Logf("%s.log:\n%s", name, data)
+	}
+
+	// Verify each service's error was captured.
+	expectedErrors := map[string]string{
+		"go-api":     "[go-api] database connection refused",
+		"go-worker":  "[go-worker] redis timeout: connection pool exhausted",
+		"python-web": "[python-web] upstream service unavailable: connection refused to auth-svc:443",
+	}
+	for svc, errMsg := range expectedErrors {
+		if !strings.Contains(output, errMsg) {
+			t.Errorf("otel-errors missing error from %s: expected %q", svc, errMsg)
+		}
+	}
+
+	// Verify info logs were NOT captured (spot check a few).
+	infoPatterns := []string{
+		"processing request",
+		"continuing work",
+		"processing job",
+		"job step completed",
+		"handling request",
+		"request processing",
+	}
+	for _, pat := range infoPatterns {
+		if strings.Contains(output, pat) {
+			t.Errorf("otel-errors should not contain info log pattern %q", pat)
+		}
+	}
+}
+
 // ─── Test helpers ───────────────────────────────────────────────────────────
 
 type logEntry struct {
@@ -449,16 +576,21 @@ func freePort(t *testing.T) int {
 
 func waitForPort(t *testing.T, port int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	waitForPortTimeout(t, port, 5*time.Second)
+}
+
+func waitForPortTimeout(t *testing.T, port int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), 100*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("port %d did not become available", port)
+	t.Fatalf("port %d did not become available within %s", port, timeout)
 }
 
 func projectRoot(t *testing.T) string {
@@ -471,6 +603,18 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// killPort kills any process listening on the given TCP port (best-effort).
+func killPort(port int) {
+	// lsof -ti :PORT gives PIDs.
+	out, err := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
+	if err != nil || len(out) == 0 {
+		return
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		_ = exec.Command("kill", "-9", line).Run()
 	}
 }
 
