@@ -39,8 +39,8 @@ type RunTarget struct {
 	// failures are logged but do not abort remaining cleanup steps.
 	Cleanup []string `yaml:"cleanup"`
 	// Otel enables OpenTelemetry log collection for this target.  When true,
-	// tukituki injects OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_SERVICE_NAME into the
-	// process environment and ensures a bundled OTLP receiver is running.
+	// tukituki injects OTEL_EXPORTER_OTLP_ENDPOINT into the process environment
+	// and ensures a bundled OTLP receiver is running.
 	Otel bool `yaml:"otel"`
 	// ParseError is set when the YAML file could not be parsed. The target
 	// will appear in the TUI with the error displayed but cannot be started.

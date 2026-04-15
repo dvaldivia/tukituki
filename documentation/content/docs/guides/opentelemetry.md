@@ -12,7 +12,6 @@ When at least one run target has `otel: true`, tukituki automatically:
 1. **Starts a bundled OTLP log receiver** as a background process (just like your other targets).
 2. **Injects environment variables** into each otel-enabled target:
    - `OTEL_EXPORTER_OTLP_ENDPOINT` pointing to the receiver
-   - `OTEL_SERVICE_NAME` set to the target's `name`
 3. **Filters incoming log records** by severity (default: ERROR and above).
 4. **Displays matching entries** in a virtual **otel-errors** process at the bottom of the TUI sidebar, prefixed with the originating service name.
 
@@ -71,7 +70,7 @@ Filtered log records are displayed as:
 [service-name] log body text
 ```
 
-The `service-name` comes from the `service.name` resource attribute in the OTLP payload, which tukituki sets via `OTEL_SERVICE_NAME` for otel-enabled targets.
+The `service-name` comes from the `service.name` resource attribute in the OTLP payload. Your application's OTel SDK sets this as part of its resource configuration.
 
 ## Headless Access
 

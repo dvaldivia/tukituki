@@ -184,10 +184,7 @@ func (m *Manager) StartTarget(ctx context.Context, target config.RunTarget) erro
 	// Inject OpenTelemetry environment variables when OTel is enabled.
 	if target.Otel && m.otelCfg != nil {
 		endpoint := fmt.Sprintf("http://localhost:%d", m.otelCfg.Port)
-		cmd.Env = append(cmd.Env,
-			"OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint,
-			"OTEL_SERVICE_NAME="+name,
-		)
+		cmd.Env = append(cmd.Env, "OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint)
 	}
 
 	if err := cmd.Start(); err != nil {

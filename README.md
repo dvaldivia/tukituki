@@ -208,7 +208,7 @@ otel: true
 When at least one target has `otel: true`, tukituki automatically:
 
 1. Starts a bundled OTLP log receiver as a background process
-2. Injects `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME` into the target's environment
+2. Injects `OTEL_EXPORTER_OTLP_ENDPOINT` into the target's environment
 3. Adds a virtual **otel-errors** entry at the bottom of the TUI sidebar
 
 The collector filters incoming log records by severity and displays matching entries in the format:
