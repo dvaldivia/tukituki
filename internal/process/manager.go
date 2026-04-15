@@ -618,28 +618,14 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		return nil
 	}
 
-	// Already running?
-	m.mu.RLock()
-	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
-		m.mu.RUnlock()
-		return nil
-	}
-	m.mu.RUnlock()
-
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve executable path: %w", err)
-	}
-
 	target := config.RunTarget{
 		Name:        OtelTargetName,
-		Command:     exe,
-		Args:        []string{"otel-collector", "--protocol", m.otelCfg.Protocol, "--severity", m.otelCfg.Severity, "--port", fmt.Sprintf("%d", m.otelCfg.Port)},
 		Description: "OpenTelemetry error collector",
 		Virtual:     true,
 	}
 
-	// Add the virtual target to the list if it isn't already there.
+	// Always add the virtual target to the list so the TUI shows it,
+	// even when the collector is already running from a previous session.
 	found := false
 	for _, t := range m.targets {
 		if t.Name == OtelTargetName {
@@ -650,6 +636,25 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 	if !found {
 		m.targets = append(m.targets, target)
 	}
+
+	// Already running (e.g. reattaching after detach)?
+	m.mu.RLock()
+	alive := false
+	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
+		alive = true
+	}
+	m.mu.RUnlock()
+	if alive {
+		return nil
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	target.Command = exe
+	target.Args = []string{"otel-collector", "--protocol", m.otelCfg.Protocol, "--severity", m.otelCfg.Severity, "--port", fmt.Sprintf("%d", m.otelCfg.Port)}
 
 	return m.StartTarget(ctx, target)
 }
