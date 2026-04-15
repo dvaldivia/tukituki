@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -102,7 +103,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&otelSeverity, "otel-severity", "error",
 		"minimum OTel log severity to display (env: TUKITUKI_OTEL_SEVERITY)")
 	rootCmd.PersistentFlags().IntVar(&otelPort, "otel-port", 0,
-		"OTel receiver port; 0 = auto (4317 for grpc, 4318 for http) (env: TUKITUKI_OTEL_PORT)")
+		"OTel receiver port; 0 = random available port (env: TUKITUKI_OTEL_PORT)")
 
 	// Bind persistent flags to viper so env-vars and config file override defaults.
 	_ = viper.BindPFlag("run_dir", rootCmd.PersistentFlags().Lookup("run-dir"))
@@ -192,16 +193,32 @@ func resolveOtelSeverity() string {
 }
 
 // resolveOtelPort returns the effective OTel receiver port.
-// 0 means auto (4317 for gRPC, 4318 for HTTP).
+// When not explicitly set, a random available port is chosen to avoid
+// collisions when multiple tukituki instances run on the same machine.
 func resolveOtelPort() int {
-	p := viper.GetInt("otel_port")
-	if p != 0 {
+	if p := viper.GetInt("otel_port"); p != 0 {
 		return p
 	}
-	if resolveOtelProtocol() == "http" {
-		return 4318
+	port, err := freePort()
+	if err != nil {
+		// Fallback to well-known defaults if we can't find a free port.
+		if resolveOtelProtocol() == "http" {
+			return 4318
+		}
+		return 4317
 	}
-	return 4317
+	return port
+}
+
+// freePort asks the OS for an available TCP port.
+func freePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
 }
 
 // isTTY reports whether stdout is connected to a terminal.

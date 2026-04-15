@@ -279,7 +279,7 @@ Flags and environment variables (via `TUKITUKI_` prefix) override defaults:
 | `--json` | — | false | Emit JSON output (all subcommands) |
 | `--otel-protocol` | `TUKITUKI_OTEL_PROTOCOL` | `grpc` | OTel receiver protocol (`grpc` or `http`) |
 | `--otel-severity` | `TUKITUKI_OTEL_SEVERITY` | `error` | Minimum OTel log severity to display |
-| `--otel-port` | `TUKITUKI_OTEL_PORT` | auto | OTel receiver port (4317 for gRPC, 4318 for HTTP) |
+| `--otel-port` | `TUKITUKI_OTEL_PORT` | random | OTel receiver port (0 = random available port) |
 
 You can also place a `.tukitukirc.yaml` in the project root or `$HOME`:
 
