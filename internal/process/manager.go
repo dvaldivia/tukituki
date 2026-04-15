@@ -384,14 +384,19 @@ func (m *Manager) Stop(name string) error {
 	}
 	m.mu.Unlock()
 
-	// Send SIGTERM.
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		// Process may already be dead.
-		if !isAlreadyDone(err) {
-			return fmt.Errorf("SIGTERM to %d: %w", pid, err)
+	// Send SIGTERM to the entire process group (negative PID) so that child
+	// processes spawned by the shell wrapper (e.g. `go run` binaries) are
+	// also terminated.  The process group was created by Setpgid in Start().
+	pgid := -pid
+	if err := syscall.Kill(pgid, syscall.SIGTERM); err != nil {
+		// Fall back to signalling just the leader if the group signal fails.
+		if err2 := proc.Signal(syscall.SIGTERM); err2 != nil {
+			if !isAlreadyDone(err2) {
+				return fmt.Errorf("SIGTERM to %d: %w", pid, err2)
+			}
+			m.runCleanup(name)
+			return nil
 		}
-		m.runCleanup(name)
-		return nil
 	}
 
 	// Wait up to 5 seconds for the process to exit.
@@ -404,9 +409,12 @@ func (m *Manager) Stop(name string) error {
 		}
 	}
 
-	// Force kill.
-	if err := proc.Signal(syscall.SIGKILL); err != nil && !isAlreadyDone(err) {
-		return fmt.Errorf("SIGKILL to %d: %w", pid, err)
+	// Force kill the entire process group.
+	if err := syscall.Kill(pgid, syscall.SIGKILL); err != nil {
+		// Fall back to just the leader.
+		if err2 := proc.Signal(syscall.SIGKILL); err2 != nil && !isAlreadyDone(err2) {
+			return fmt.Errorf("SIGKILL to %d: %w", pid, err2)
+		}
 	}
 
 	m.mu.Lock()
@@ -454,12 +462,23 @@ func (m *Manager) runCleanup(name string) {
 	}
 }
 
-// StopAll stops all running processes.
+// StopAll stops all running processes, including the virtual OTel collector
+// if it exists in state.
 func (m *Manager) StopAll() error {
 	for _, t := range m.targets {
 		if err := m.Stop(t.Name); err != nil {
 			// Log but continue stopping others.
 			fmt.Fprintf(os.Stderr, "stop %s: %v\n", t.Name, err)
+		}
+	}
+	// Also stop the otel-collector if it's running but not in the target
+	// list (e.g. headless stop without a prior EnsureOtelCollector call).
+	m.mu.RLock()
+	_, hasOtel := m.st.Processes[OtelTargetName]
+	m.mu.RUnlock()
+	if hasOtel {
+		if err := m.Stop(OtelTargetName); err != nil {
+			fmt.Fprintf(os.Stderr, "stop %s: %v\n", OtelTargetName, err)
 		}
 	}
 	return nil
@@ -634,7 +653,10 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		m.targets = append(m.targets, target)
 	}
 
-	// Already running (e.g. reattaching after detach)?
+	// If the collector is already running, check whether it matches the
+	// current config.  A stale collector (e.g. from a previous session that
+	// used a different random port) must be stopped and restarted so the
+	// port matches the OTEL_EXPORTER_OTLP_ENDPOINT injected into targets.
 	m.mu.RLock()
 	alive := false
 	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
@@ -642,7 +664,10 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 	}
 	m.mu.RUnlock()
 	if alive {
-		return nil
+		// Stop the old collector — it may be on a stale port.
+		if err := m.Stop(OtelTargetName); err != nil {
+			fmt.Fprintf(os.Stderr, "restart otel collector: stop: %v\n", err)
+		}
 	}
 
 	exe, err := os.Executable()

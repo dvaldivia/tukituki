@@ -46,7 +46,7 @@ func main() {
 	}
 
 	provider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)),
 		sdklog.WithResource(res),
 	)
 	defer provider.Shutdown(ctx)
