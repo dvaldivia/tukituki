@@ -8,34 +8,52 @@
 <link rel="icon" href="/tukituki/favicon-32x32.png" type="image/png" sizes="32x32" />
 <link rel="apple-touch-icon" href="/tukituki/apple-touch-icon.png" sizes="180x180" />
 <link fetchpriority="low" href="/tukituki/site.webmanifest" rel="manifest" />
-<title>Guides – tukituki</title>
-  <meta name="description" content="These guides go deeper on behaviors that matter once your processes are running day-to-day: cleaning up resources, state persistence, and collecting OpenTelemetry errors.
-Cleanup CommandsRun shell commands after a process stops — free ports, kill stragglers, remove PID files and sockets. State &amp; Log PersistenceHow tukituki survives restarts: state.json, log file lifecycle, the in-memory ring buffer, and the reattach flow. OpenTelemetry Error CollectionCollect OTel log records from your services and surface errors in one place — no external collector needed. " /><link rel="canonical" href="http://localhost:1313/tukituki/docs/guides/" itemprop="url" />
+<title>OpenTelemetry Error Collection – tukituki</title>
+  <meta name="description" content="tukituki includes a built-in OTLP log receiver that collects OpenTelemetry log records from your development services and surfaces errors in one place. No external collector or agent is required.
+How It Works When at least one run target has otel: true, tukituki automatically:
+Starts a bundled OTLP log receiver as a background process (just like your other targets). Injects environment variables into each otel-enabled target: OTEL_EXPORTER_OTLP_ENDPOINT pointing to the receiver Filters incoming log records by severity (default: ERROR and above). Displays matching entries in a virtual otel-errors process at the bottom of the TUI sidebar, prefixed with the originating service name. The receiver process is detached from the TUI, so it survives q (detach) and is reconnected when you reattach." /><link rel="canonical" href="http://localhost:1313/tukituki/docs/guides/opentelemetry/" itemprop="url" />
 
-<meta property="og:title" content="Guides">
+<meta property="og:title" content="OpenTelemetry Error Collection">
 <meta
   property="og:description"
   content="
     
-      A terminal UI for managing multiple dev processes
+      tukituki includes a built-in OTLP log receiver that collects OpenTelemetry log records from your development services and surfaces errors in one place. No external collector or agent is required.
+How It Works
+    When at least one run target has otel: true, tukituki automatically:
+
+Starts a bundled OTLP log receiver as a background process (just like your other targets).
+Injects environment variables into each otel-enabled target:
+
+OTEL_EXPORTER_OTLP_ENDPOINT pointing to the receiver
+
+
+Filters incoming log records by severity (default: ERROR and above).
+Displays matching entries in a virtual otel-errors process at the bottom of the TUI sidebar, prefixed with the originating service name.
+
+The receiver process is detached from the TUI, so it survives q (detach) and is reconnected when you reattach.
     
   ">
 <meta
   property="og:type"
   content="
-    website
+    article
   ">
-<meta property="og:url" content="http://localhost:1313/tukituki/docs/guides/">
+<meta property="og:url" content="http://localhost:1313/tukituki/docs/guides/opentelemetry/"><meta property="article:section" content="docs">
 
 
-  <meta itemprop="name" content="Guides">
-  <meta itemprop="description" content="These guides go deeper on behaviors that matter once your processes are running day-to-day: cleaning up resources, state persistence, and collecting OpenTelemetry errors.
-Cleanup CommandsRun shell commands after a process stops — free ports, kill stragglers, remove PID files and sockets. State &amp; Log PersistenceHow tukituki survives restarts: state.json, log file lifecycle, the in-memory ring buffer, and the reattach flow. OpenTelemetry Error CollectionCollect OTel log records from your services and surface errors in one place — no external collector needed.">
-  <meta itemprop="wordCount" content="80">
+
+
+  <meta itemprop="name" content="OpenTelemetry Error Collection">
+  <meta itemprop="description" content="tukituki includes a built-in OTLP log receiver that collects OpenTelemetry log records from your development services and surfaces errors in one place. No external collector or agent is required.
+How It Works When at least one run target has otel: true, tukituki automatically:
+Starts a bundled OTLP log receiver as a background process (just like your other targets). Injects environment variables into each otel-enabled target: OTEL_EXPORTER_OTLP_ENDPOINT pointing to the receiver Filters incoming log records by severity (default: ERROR and above). Displays matching entries in a virtual otel-errors process at the bottom of the TUI sidebar, prefixed with the originating service name. The receiver process is detached from the TUI, so it survives q (detach) and is reconnected when you reattach.">
+  <meta itemprop="wordCount" content="448">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Guides">
-  <meta name="twitter:description" content="These guides go deeper on behaviors that matter once your processes are running day-to-day: cleaning up resources, state persistence, and collecting OpenTelemetry errors.
-Cleanup CommandsRun shell commands after a process stops — free ports, kill stragglers, remove PID files and sockets. State &amp; Log PersistenceHow tukituki survives restarts: state.json, log file lifecycle, the in-memory ring buffer, and the reattach flow. OpenTelemetry Error CollectionCollect OTel log records from your services and surface errors in one place — no external collector needed.">
+  <meta name="twitter:title" content="OpenTelemetry Error Collection">
+  <meta name="twitter:description" content="tukituki includes a built-in OTLP log receiver that collects OpenTelemetry log records from your development services and surfaces errors in one place. No external collector or agent is required.
+How It Works When at least one run target has otel: true, tukituki automatically:
+Starts a bundled OTLP log receiver as a background process (just like your other targets). Injects environment variables into each otel-enabled target: OTEL_EXPORTER_OTLP_ENDPOINT pointing to the receiver Filters incoming log records by severity (default: ERROR and above). Displays matching entries in a virtual otel-errors process at the bottom of the TUI sidebar, prefixed with the originating service name. The receiver process is detached from the TUI, so it survives q (detach) and is reconnected when you reattach.">
 <link href="/tukituki/css/compiled/main.css" rel="stylesheet" />
     <link href="/tukituki/css/variables.css" rel="stylesheet" />
     <link href="/tukituki/css/custom.css" rel="stylesheet" />
@@ -227,11 +245,11 @@ Cleanup CommandsRun shell commands after a process stops — free ports, kill st
               
             </li></ul>
       </div></li>
-            <li class="open"><div class="hextra-sidebar-item hx:group hx:relative hx:flex hx:items-center" data-active="true">
+            <li class="open"><div class="hextra-sidebar-item hx:group hx:relative hx:flex hx:items-center" data-active="false">
     <a
       class="hx:flex hx:items-center hx:justify-between hx:gap-2 hx:grow hx:cursor-pointer hx:rounded-sm hx:px-2 hx:py-1.5 hx:text-sm hx:transition-colors [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] hx:ltr:pr-8 hx:rtl:pl-8
       hx:hextra-focus-visible-inset
-        hextra-sidebar-active-item hx:bg-primary-100 hx:font-semibold hx:text-primary-800 hx:contrast-more:border hx:contrast-more:border-primary-500 hx:dark:bg-primary-400/10 hx:dark:text-primary-600 hx:contrast-more:dark:border-primary-500"
+        hx:text-gray-500 hx:hover:bg-gray-100 hx:hover:text-gray-900 hx:contrast-more:border hx:contrast-more:border-transparent hx:contrast-more:text-gray-900 hx:contrast-more:hover:border-gray-900 hx:dark:text-neutral-400 hx:dark:hover:bg-primary-100/5 hx:dark:hover:text-gray-50 hx:contrast-more:dark:text-gray-50 hx:contrast-more:dark:hover:border-gray-50"
       href="/tukituki/docs/guides/"
       
     >
@@ -263,11 +281,11 @@ Cleanup CommandsRun shell commands after a process stops — free ports, kill st
     </a>
   </div>
               
-            </li><li class="hx:flex hx:flex-col "><div class="hextra-sidebar-item hx:group hx:relative hx:flex hx:items-center" data-active="false">
+            </li><li class="hx:flex hx:flex-col open"><div class="hextra-sidebar-item hx:group hx:relative hx:flex hx:items-center" data-active="true">
     <a
       class="hx:flex hx:items-center hx:justify-between hx:gap-2 hx:grow hx:cursor-pointer hx:rounded-sm hx:px-2 hx:py-1.5 hx:text-sm hx:transition-colors [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none]
       hx:hextra-focus-visible-inset
-        hx:text-gray-500 hx:hover:bg-gray-100 hx:hover:text-gray-900 hx:contrast-more:border hx:contrast-more:border-transparent hx:contrast-more:text-gray-900 hx:contrast-more:hover:border-gray-900 hx:dark:text-neutral-400 hx:dark:hover:bg-primary-100/5 hx:dark:hover:text-gray-50 hx:contrast-more:dark:text-gray-50 hx:contrast-more:dark:hover:border-gray-50"
+        hextra-sidebar-active-item hx:bg-primary-100 hx:font-semibold hx:text-primary-800 hx:contrast-more:border hx:contrast-more:border-primary-500 hx:dark:bg-primary-400/10 hx:dark:text-primary-600 hx:contrast-more:dark:border-primary-500"
       href="/tukituki/docs/guides/opentelemetry/"
       
     >
@@ -347,7 +365,50 @@ Cleanup CommandsRun shell commands after a process stops — free ports, kill st
 </div>
 </div></div></aside>
     
-<nav class="hextra-toc hx:order-last hx:hidden hx:w-64 hx:shrink-0 hx:xl:block hx:print:hidden hx:px-4" aria-label="Table of contents"></nav>
+<nav class="hextra-toc hx:order-last hx:hidden hx:w-64 hx:shrink-0 hx:xl:block hx:print:hidden hx:px-4" aria-label="Table of contents">
+    <div class="hextra-scrollbar hx:sticky hx:top-16 hx:overflow-y-auto hx:pr-4 hx:pt-6 hx:text-sm [hyphens:auto] hx:max-h-[calc(100vh-var(--navbar-height)-env(safe-area-inset-bottom))] hx:ltr:-mr-4 hx:rtl:-ml-4"><p class="hx:mb-4 hx:font-semibold hx:tracking-tight">On this page</p><ul>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#how-it-works">How It Works
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#enabling-otel">Enabling OTel
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#configuring-severity">Configuring Severity
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#configuring-the-protocol">Configuring the Protocol
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#output-format">Output Format
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#headless-access">Headless Access
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#configuration-file">Configuration File
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#troubleshooting">Troubleshooting
+        </a>
+      </li></ul>
+      <div class="hx:mt-8 hx:border-t hx:bg-white hx:pt-8 hx:shadow-[0_-12px_16px_white] hx:dark:bg-dark hx:dark:shadow-[0_-12px_16px_#111] hx:sticky hx:bottom-0 hx:flex hx:flex-col hx:items-start hx:gap-2 hx:pb-8 hx:border-gray-200 hx:dark:border-neutral-800 hx:contrast-more:border-t hx:contrast-more:border-neutral-400 hx:contrast-more:shadow-none hx:contrast-more:dark:border-neutral-400">
+        <button id="backToTop" tabindex="-1" onClick="scrollUp();" class="hx:cursor-pointer hx:transition-all hx:duration-75 hx:opacity-0 hx:text-xs hx:font-medium hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-100 hx:contrast-more:text-gray-800 hx:contrast-more:dark:text-gray-50">
+          <span>Scroll to top</span>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false" class="hx:inline hx:ltr:ml-1 hx:rtl:mr-1 hx:h-3.5 hx:w-3.5 hx:rounded-full hx:border hx:border-gray-500 hx:hover:border-gray-900 hx:dark:border-gray-400 hx:dark:hover:border-gray-100 hx:contrast-more:border-gray-800 hx:contrast-more:dark:border-gray-50">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </nav>
 
 
     <article class="hx:w-full hx:break-words hx:flex hx:min-h-[calc(100vh-var(--navbar-height))] hx:min-w-0 hx:justify-center hx:pb-8 hx:pr-[calc(env(safe-area-inset-right)-1.5rem)]">
@@ -355,35 +416,194 @@ Cleanup CommandsRun shell commands after a process stops — free ports, kill st
         <div class="hx:mt-1.5 hx:flex hx:items-center hx:gap-1 hx:overflow-hidden hx:text-sm hx:text-gray-500 hx:dark:text-gray-400 hx:contrast-more:text-current">
         <div class="hx:whitespace-nowrap hx:transition-colors hx:min-w-[24px] hx:overflow-hidden hx:text-ellipsis hx:hover:text-gray-900 hx:dark:hover:text-gray-100">
           <a href="/tukituki/docs/" class="hx:inline-block hx:rounded-sm hx:hextra-focus-visible-inset">Documentation</a>
-        </div><svg class="hx:w-3.5 hx:shrink-0 hx:rtl:-rotate-180" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><div class="hx:whitespace-nowrap hx:transition-colors hx:font-medium hx:text-gray-700 hx:contrast-more:font-bold hx:contrast-more:text-current hx:dark:text-gray-100 hx:contrast-more:dark:text-current">Guides</div>
+        </div><svg class="hx:w-3.5 hx:shrink-0 hx:rtl:-rotate-180" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <div class="hx:whitespace-nowrap hx:transition-colors hx:min-w-[24px] hx:overflow-hidden hx:text-ellipsis hx:hover:text-gray-900 hx:dark:hover:text-gray-100">
+          <a href="/tukituki/docs/guides/" class="hx:inline-block hx:rounded-sm hx:hextra-focus-visible-inset">Guides</a>
+        </div><svg class="hx:w-3.5 hx:shrink-0 hx:rtl:-rotate-180" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg><div class="hx:whitespace-nowrap hx:transition-colors hx:font-medium hx:text-gray-700 hx:contrast-more:font-bold hx:contrast-more:text-current hx:dark:text-gray-100 hx:contrast-more:dark:text-current">OpenTelemetry Error Collection</div>
   </div>
 
         <div class="content">
           
           <div class="hx:flex hx:flex-col hx:sm:flex-row hx:items-start hx:sm:items-center hx:sm:justify-between hx:gap-4 hx:mb-4">
-            <h1 class="hx:mb-0">Guides</h1>
+            <h1 class="hx:mb-0">OpenTelemetry Error Collection</h1>
             
           </div>
           
-          <p>These guides go deeper on behaviors that matter once your processes are running day-to-day: cleaning up resources, state persistence, and collecting OpenTelemetry errors.</p>
-<div class="hextra-cards hx:mt-4 hx:gap-4 hx:grid not-prose" style="--hextra-cards-grid-cols: 3;">
-  <a
-    class="hextra-card hx:group hx:flex hx:flex-col hx:justify-start hx:overflow-hidden hx:rounded-lg hx:border hx:border-gray-200 hx:text-current hx:no-underline hx:dark:shadow-none hx:hover:shadow-gray-100 hx:dark:hover:shadow-none hx:shadow-gray-100 hx:active:shadow-sm hx:active:shadow-gray-200 hx:transition-all hx:duration-200 hx:hover:border-gray-300 hx:bg-transparent hx:shadow-xs hx:dark:border-neutral-800 hx:hover:bg-slate-50 hx:hover:shadow-md hx:dark:hover:border-neutral-700 hx:dark:hover:bg-neutral-900"href="cleanup"
-      ><div class="hx:mt-auto">
-      <span class="hextra-card-icon hx:flex hx:font-semibold hx:items-start hx:gap-2 hx:pt-4 hx:px-4 hx:text-gray-700 hx:hover:text-gray-900 hx:dark:text-neutral-200 hx:dark:hover:text-neutral-50"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>Cleanup Commands</span><div class="hextra-card-subtitle hx:line-clamp-3 hx:text-sm hx:font-normal hx:text-gray-500 hx:dark:text-gray-400 hx:px-4 hx:mb-4 hx:mt-2">Run shell commands after a process stops — free ports, kill stragglers, remove PID files and sockets.</div></div></a>
-  <a
-    class="hextra-card hx:group hx:flex hx:flex-col hx:justify-start hx:overflow-hidden hx:rounded-lg hx:border hx:border-gray-200 hx:text-current hx:no-underline hx:dark:shadow-none hx:hover:shadow-gray-100 hx:dark:hover:shadow-none hx:shadow-gray-100 hx:active:shadow-sm hx:active:shadow-gray-200 hx:transition-all hx:duration-200 hx:hover:border-gray-300 hx:bg-transparent hx:shadow-xs hx:dark:border-neutral-800 hx:hover:bg-slate-50 hx:hover:shadow-md hx:dark:hover:border-neutral-700 hx:dark:hover:bg-neutral-900"href="state-persistence"
-      ><div class="hx:mt-auto">
-      <span class="hextra-card-icon hx:flex hx:font-semibold hx:items-start hx:gap-2 hx:pt-4 hx:px-4 hx:text-gray-700 hx:hover:text-gray-900 hx:dark:text-neutral-200 hx:dark:hover:text-neutral-50"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>State &amp; Log Persistence</span><div class="hextra-card-subtitle hx:line-clamp-3 hx:text-sm hx:font-normal hx:text-gray-500 hx:dark:text-gray-400 hx:px-4 hx:mb-4 hx:mt-2">How tukituki survives restarts: state.json, log file lifecycle, the in-memory ring buffer, and the reattach flow.</div></div></a>
-  <a
-    class="hextra-card hx:group hx:flex hx:flex-col hx:justify-start hx:overflow-hidden hx:rounded-lg hx:border hx:border-gray-200 hx:text-current hx:no-underline hx:dark:shadow-none hx:hover:shadow-gray-100 hx:dark:hover:shadow-none hx:shadow-gray-100 hx:active:shadow-sm hx:active:shadow-gray-200 hx:transition-all hx:duration-200 hx:hover:border-gray-300 hx:bg-transparent hx:shadow-xs hx:dark:border-neutral-800 hx:hover:bg-slate-50 hx:hover:shadow-md hx:dark:hover:border-neutral-700 hx:dark:hover:bg-neutral-900"href="opentelemetry"
-      ><div class="hx:mt-auto">
-      <span class="hextra-card-icon hx:flex hx:font-semibold hx:items-start hx:gap-2 hx:pt-4 hx:px-4 hx:text-gray-700 hx:hover:text-gray-900 hx:dark:text-neutral-200 hx:dark:hover:text-neutral-50"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>OpenTelemetry Error Collection</span><div class="hextra-card-subtitle hx:line-clamp-3 hx:text-sm hx:font-normal hx:text-gray-500 hx:dark:text-gray-400 hx:px-4 hx:mb-4 hx:mt-2">Collect OTel log records from your services and surface errors in one place — no external collector needed.</div></div></a>
-</div>
+          <p>tukituki includes a built-in OTLP log receiver that collects <a href="https://opentelemetry.io/"target="_blank" rel="noopener">OpenTelemetry</a> log records from your development services and surfaces errors in one place. No external collector or agent is required.</p>
+<h2>How It Works<span class="hx:absolute hx:-mt-20" id="how-it-works"></span>
+    <a href="#how-it-works" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>When at least one run target has <code>otel: true</code>, tukituki automatically:</p>
+<ol>
+<li><strong>Starts a bundled OTLP log receiver</strong> as a background process (just like your other targets).</li>
+<li><strong>Injects environment variables</strong> into each otel-enabled target:
+<ul>
+<li><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> pointing to the receiver</li>
+</ul>
+</li>
+<li><strong>Filters incoming log records</strong> by severity (default: ERROR and above).</li>
+<li><strong>Displays matching entries</strong> in a virtual <strong>otel-errors</strong> process at the bottom of the TUI sidebar, prefixed with the originating service name.</li>
+</ol>
+<p>The receiver process is detached from the TUI, so it survives <code>q</code> (detach) and is reconnected when you reattach.</p>
+<h2>Enabling OTel<span class="hx:absolute hx:-mt-20" id="enabling-otel"></span>
+    <a href="#enabling-otel" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>Add <code>otel: true</code> to any run target YAML:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
 
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">api</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s2">&#34;HTTP backend&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="l">go</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">args</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="l">run</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="l">./cmd/server</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">otel</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>Your application must use an OpenTelemetry SDK that exports logs via OTLP. Most OTel SDKs respect the <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> environment variable automatically.</p>
+<h2>Configuring Severity<span class="hx:absolute hx:-mt-20" id="configuring-severity"></span>
+    <a href="#configuring-severity" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>By default, only log records with severity <strong>ERROR</strong> and above are shown. Override this with the <code>--otel-severity</code> flag or <code>TUKITUKI_OTEL_SEVERITY</code> environment variable:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki --otel-severity warn    <span class="c1"># also show warnings</span>
+</span></span><span class="line"><span class="cl">tukituki --otel-severity info    <span class="c1"># info and above</span>
+</span></span><span class="line"><span class="cl">tukituki --otel-severity debug   <span class="c1"># debug and above</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>Valid levels (from lowest to highest): <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>, <code>fatal</code>.</p>
+<h2>Configuring the Protocol<span class="hx:absolute hx:-mt-20" id="configuring-the-protocol"></span>
+    <a href="#configuring-the-protocol" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>The receiver supports both gRPC and HTTP OTLP transports.</p>
+<table>
+  <thead>
+      <tr>
+          <th>Flag</th>
+          <th>Env var</th>
+          <th>Default</th>
+          <th>Port</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>--otel-protocol grpc</code></td>
+          <td><code>TUKITUKI_OTEL_PROTOCOL=grpc</code></td>
+          <td>yes</td>
+          <td>4317</td>
+      </tr>
+      <tr>
+          <td><code>--otel-protocol http</code></td>
+          <td><code>TUKITUKI_OTEL_PROTOCOL=http</code></td>
+          <td>no</td>
+          <td>4318</td>
+      </tr>
+  </tbody>
+</table>
+<p>Override the port with <code>--otel-port</code> or <code>TUKITUKI_OTEL_PORT</code>:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki --otel-protocol grpc --otel-port <span class="m">14317</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>The HTTP receiver accepts <code>POST /v1/logs</code> with either <code>application/x-protobuf</code> or <code>application/json</code> content types.</p>
+<h2>Output Format<span class="hx:absolute hx:-mt-20" id="output-format"></span>
+    <a href="#output-format" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>Filtered log records are displayed as:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><pre><code>[service-name] log body text</code></pre></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>The <code>service-name</code> comes from the <code>service.name</code> resource attribute in the OTLP payload. Your application&rsquo;s OTel SDK sets this as part of its resource configuration.</p>
+<h2>Headless Access<span class="hx:absolute hx:-mt-20" id="headless-access"></span>
+    <a href="#headless-access" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>The virtual <strong>otel-errors</strong> target works with all headless subcommands:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">tukituki logs otel-errors                  <span class="c1"># follow errors in real time</span>
+</span></span><span class="line"><span class="cl">tukituki logs otel-errors --no-follow      <span class="c1"># print buffered errors and exit</span>
+</span></span><span class="line"><span class="cl">tukituki status otel-errors                <span class="c1"># check collector status</span>
+</span></span><span class="line"><span class="cl">tukituki stop otel-errors                  <span class="c1"># stop the collector</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<h2>Configuration File<span class="hx:absolute hx:-mt-20" id="configuration-file"></span>
+    <a href="#configuration-file" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>OTel settings can also be placed in <code>.tukitukirc.yaml</code>:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">otel_protocol</span><span class="p">:</span><span class="w"> </span><span class="l">grpc</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">otel_severity</span><span class="p">:</span><span class="w"> </span><span class="l">error</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">otel_port</span><span class="p">:</span><span class="w"> </span><span class="m">4317</span></span></span></code></pre></div></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<h2>Troubleshooting<span class="hx:absolute hx:-mt-20" id="troubleshooting"></span>
+    <a href="#troubleshooting" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p><strong>No errors appearing?</strong></p>
+<ul>
+<li>Confirm your app is exporting OTel <strong>logs</strong> (not just traces or metrics).</li>
+<li>Check the severity threshold &ndash; your logs may be below the filter.</li>
+<li>Verify the collector is running: <code>tukituki status otel-errors</code>.</li>
+<li>Check the collector&rsquo;s own log output: <code>tukituki logs otel-errors --no-follow</code>.</li>
+</ul>
+<p><strong>Port already in use?</strong></p>
+<ul>
+<li>Another OTel collector or service may be using port 4317. Override with <code>--otel-port</code>.</li>
+</ul>
+<p><strong>Collector not starting?</strong></p>
+<ul>
+<li>Ensure at least one target has <code>otel: true</code> in its YAML file.</li>
+</ul>
 
         </div>
-        <div class="hx:mt-16"></div>
+        <div class="hx:mt-16"></div><div class="hx:mb-8 hx:flex hx:items-center hx:border-t hx:pt-8 hx:border-gray-200 hx:dark:border-neutral-800 hx:contrast-more:border-neutral-400 hx:dark:contrast-more:border-neutral-400 hx:print:hidden"><a
+        href="/tukituki/docs/guides/state-persistence/"
+        title="State &amp; Log Persistence"
+        class="hx:flex hx:max-w-[50%] hx:items-center hx:gap-1 hx:py-4 hx:text-base hx:font-medium hx:text-gray-600 hx:transition-colors [word-break:break-word] hx:hover:text-primary-600 hx:dark:text-gray-300 hx:md:text-lg hx:ltr:pr-4 hx:rtl:pl-4"
+      ><svg class="hx:inline hx:h-5 hx:shrink-0 hx:ltr:rotate-180" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>State &amp; Log Persistence</a></div>
       </main>
     </article>
   </div>
