@@ -66,7 +66,7 @@ func (c *Collector) Run(ctx context.Context) error {
 // ─── gRPC receiver ──────────────────────────────────────────────────────────
 
 func (c *Collector) runGRPC(ctx context.Context) error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", c.Port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", c.Port))
 	if err != nil {
 		return fmt.Errorf("listen on port %d: %w", c.Port, err)
 	}
@@ -102,7 +102,7 @@ func (c *Collector) runHTTP(ctx context.Context) error {
 	mux.Handle("/v1/logs", handler)
 
 	c.httpServer = &http.Server{
-		Addr:    fmt.Sprintf(":%d", c.Port),
+		Addr:    fmt.Sprintf("127.0.0.1:%d", c.Port),
 		Handler: mux,
 	}
 

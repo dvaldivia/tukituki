@@ -32,8 +32,6 @@ func main() {
 	// Strip http:// prefix — gRPC wants a bare host:port.
 	target := strings.TrimPrefix(endpoint, "http://")
 	target = strings.TrimPrefix(target, "https://")
-	// Replace "localhost" with "127.0.0.1" to avoid slow DNS lookups in gRPC.
-	target = strings.Replace(target, "localhost", "127.0.0.1", 1)
 
 	// Retry connection for up to 10 seconds (collector may still be starting).
 	var conn *grpc.ClientConn
