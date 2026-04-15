@@ -6,3 +6,5 @@ args:
   - run
   - .
 otel: true
+cleanup:
+  - "lsof -ti:8082 | xargs kill -9 2>/dev/null || true"

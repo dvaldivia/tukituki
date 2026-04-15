@@ -6,3 +6,5 @@ args:
   - run
   - main.py
 otel: true
+cleanup:
+  - "lsof -ti:8083 | xargs kill -9 2>/dev/null || true"
