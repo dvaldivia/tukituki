@@ -314,7 +314,10 @@ func (m *Manager) startLogTailer(name, logFile string) {
 			}
 			offset += int64(n)
 
-			chunk := string(buf[:n])
+			chunk := strings.ReplaceAll(string(buf[:n]), "\x00", "")
+			if chunk == "" {
+				continue
+			}
 			lines := strings.Split(chunk, "\n")
 			// If the last element is empty (trailing newline), drop it.
 			if len(lines) > 0 && lines[len(lines)-1] == "" {
