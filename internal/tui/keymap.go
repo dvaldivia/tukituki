@@ -47,6 +47,9 @@ type keyMap struct {
 
 	// ToggleWrap toggles soft word-wrap in the log viewport.
 	ToggleWrap key.Binding
+
+	// EditFile opens the selected target's run file in $EDITOR (or vim).
+	EditFile key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -116,6 +119,10 @@ func defaultKeyMap() keyMap {
 		ToggleWrap: key.NewBinding(
 			key.WithKeys("w"),
 			key.WithHelp("w", "toggle line wrap"),
+		),
+		EditFile: key.NewBinding(
+			key.WithKeys("E"),
+			key.WithHelp("E", "edit run file"),
 		),
 	}
 }

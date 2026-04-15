@@ -17,6 +17,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -83,6 +85,9 @@ type targetsReloadedMsg struct {
 	targets []config.RunTarget
 	err     error
 }
+
+// editorFinishedMsg is sent when the external editor exits.
+type editorFinishedMsg struct{ err error }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
@@ -433,6 +438,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.wrapLogs = !m.wrapLogs
 				m.refreshViewportContent()
 
+			case matchKey(msg, m.keys.EditFile):
+				if len(m.targets) > 0 {
+					t := m.targets[m.selected]
+					if t.SourceFile != "" {
+						editor := os.Getenv("EDITOR")
+						if editor == "" {
+							editor = "vim"
+						}
+						c := exec.Command(editor, t.SourceFile)
+						return m, tea.ExecProcess(c, func(err error) tea.Msg {
+							return editorFinishedMsg{err: err}
+						})
+					}
+					m.statusMsg = "no source file for this target"
+				}
+
 			default:
 				// Forward scroll keys to the viewport.
 				wasAtBottom := m.viewport.AtBottom()
@@ -530,6 +551,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actionResultMsg:
 		m.statusMsg = msg.msg
 		// Clear the status message after 3 seconds.
+		cmds = append(cmds, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return actionResultMsg{msg: ""}
+		}))
+
+	// ── Editor exited ───────────────────────────────────────────────────────
+	case editorFinishedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("editor error: %s", msg.err)
+		} else {
+			m.statusMsg = "editor closed"
+		}
 		cmds = append(cmds, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 			return actionResultMsg{msg: ""}
 		}))
@@ -704,8 +736,8 @@ func (m Model) renderLeft() string {
 	rawHints := []string{
 		"r restart  s stop",
 		"S start    d dump",
-		"c clear    q detach",
-		"Q/^C stop all",
+		"c clear    E edit",
+		"q detach   Q/^C stop",
 	}
 	// Total fixed lines at the bottom: separator(1) + hints.
 	fixedLines := 1 + len(rawHints)
@@ -799,6 +831,7 @@ func (m Model) renderHelp() string {
 				{"r", "restart selected"},
 				{"s", "stop selected"},
 				{"S", "start selected"},
+				{"E", "edit run file"},
 			},
 		},
 		{

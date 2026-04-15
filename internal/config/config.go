@@ -48,6 +48,9 @@ type RunTarget struct {
 	// Virtual marks targets that are synthesised by tukituki (e.g. the OTel
 	// collector) rather than loaded from a .run/*.yaml file.
 	Virtual bool `yaml:"-"`
+	// SourceFile is the absolute path to the .run/*.yaml file this target was
+	// loaded from.  Empty for virtual targets or targets with parse errors.
+	SourceFile string `yaml:"-"`
 }
 
 // LoadTargets reads all *.yaml and *.yml files from runDir and returns the
@@ -81,6 +84,7 @@ func LoadTargets(runDir string) ([]RunTarget, error) {
 
 	var targets []RunTarget
 	for _, file := range files {
+		absFile, _ := filepath.Abs(file)
 		t, err := parseFile(file)
 		if err != nil {
 			// Record the error but keep going so the TUI can display it.
@@ -88,9 +92,11 @@ func LoadTargets(runDir string) ([]RunTarget, error) {
 			targets = append(targets, RunTarget{
 				Name:       name,
 				ParseError: fmt.Sprintf("%s: %v", filepath.Base(file), err),
+				SourceFile: absFile,
 			})
 			continue
 		}
+		t.SourceFile = absFile
 		targets = append(targets, t)
 	}
 
