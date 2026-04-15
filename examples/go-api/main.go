@@ -10,18 +10,17 @@ import (
 	"syscall"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 func main() {
 	ctx := context.Background()
 
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceNameKey.String("go-api")),
+	res, err := resource.New(ctx,
+		resource.WithAttributes(attribute.String("service.name", "go-api")),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "resource: %v\n", err)
