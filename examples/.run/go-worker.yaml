@@ -1,0 +1,8 @@
+name: go-worker
+description: "Example Go background worker with OTel logging"
+command: go
+workdir: go-worker
+args:
+  - run
+  - .
+otel: true

@@ -1,0 +1,8 @@
+name: python-web
+description: "Example Python HTTP service with OTel logging"
+command: uv
+workdir: python-web
+args:
+  - run
+  - main.py
+otel: true

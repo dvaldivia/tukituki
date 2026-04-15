@@ -1,0 +1,8 @@
+name: go-api
+description: "Example Go HTTP API with OTel logging"
+command: go
+workdir: go-api
+args:
+  - run
+  - .
+otel: true

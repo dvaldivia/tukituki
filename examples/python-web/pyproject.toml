@@ -1,0 +1,11 @@
+[project]
+name = "python-web"
+version = "0.1.0"
+description = "Example Python service with OTel log export"
+requires-python = ">=3.10"
+dependencies = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+    "grpcio>=1.60.0",
+]
