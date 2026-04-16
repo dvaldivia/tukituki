@@ -971,6 +971,37 @@ and AI agents).  Use --tail to control how many buffered lines are shown.`,
 			name := args[0]
 			_ = findTarget(targets, name)
 
+			if noFollow {
+				// Read the log file directly from disk — the async
+				// tailer may not have populated the ring buffer yet.
+				states := mgr.GetAllProcessStates()
+				ps, ok := states[name]
+				if !ok || ps.LogFile == "" {
+					return nil
+				}
+				data, err := os.ReadFile(ps.LogFile)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				content := strings.ReplaceAll(string(data), "\x00", "")
+				lines := strings.Split(content, "\n")
+				if len(lines) > 0 && lines[len(lines)-1] == "" {
+					lines = lines[:len(lines)-1]
+				}
+				start := 0
+				if tail > 0 && len(lines) > tail {
+					start = len(lines) - tail
+				}
+				w := bufio.NewWriter(os.Stdout)
+				for _, line := range lines[start:] {
+					fmt.Fprintln(w, line)
+				}
+				return w.Flush()
+			}
+
 			// Print buffered lines up to --tail limit.
 			buffered := mgr.GetLogLines(name)
 			start := 0
@@ -982,10 +1013,6 @@ and AI agents).  Use --tail to control how many buffered lines are shown.`,
 				fmt.Fprintln(w, line)
 			}
 			_ = w.Flush()
-
-			if noFollow {
-				return nil
-			}
 
 			// Follow new lines until Ctrl+C.
 			ch := mgr.WatchLogLines(name)
