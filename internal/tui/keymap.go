@@ -50,6 +50,9 @@ type keyMap struct {
 
 	// EditFile opens the selected target's run file in $EDITOR (or vim).
 	EditFile key.Binding
+
+	// ZoomLogs hides the left panel so logs take the full terminal width.
+	ZoomLogs key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -123,6 +126,10 @@ func defaultKeyMap() keyMap {
 		EditFile: key.NewBinding(
 			key.WithKeys("E"),
 			key.WithHelp("E", "edit run file"),
+		),
+		ZoomLogs: key.NewBinding(
+			key.WithKeys("z"),
+			key.WithHelp("z", "zoom logs (full width)"),
 		),
 	}
 }

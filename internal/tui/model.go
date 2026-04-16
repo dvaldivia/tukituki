@@ -198,6 +198,9 @@ type Model struct {
 	// wrapLogs enables soft word-wrap in the log viewport.
 	wrapLogs bool
 
+	// zoomLogs hides the left panel so logs use the full terminal width.
+	zoomLogs bool
+
 	// runDir and projectRoot are used to reload targets from disk.
 	runDir      string
 	projectRoot string
@@ -439,6 +442,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.wrapLogs = !m.wrapLogs
 				m.refreshViewportContent()
 
+			case matchKey(msg, m.keys.ZoomLogs):
+				m.zoomLogs = !m.zoomLogs
+				m.resizeViewport()
+				m.refreshViewportContent()
+
 			case matchKey(msg, m.keys.EditFile):
 				if len(m.targets) > 0 {
 					t := m.targets[m.selected]
@@ -603,11 +611,16 @@ func (m Model) View() string {
 	}
 
 	header := m.renderHeader()
-	left := m.renderLeft()
-	sep := m.renderSeparator()
 	right := m.renderRight()
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
+	var body string
+	if m.zoomLogs {
+		body = right
+	} else {
+		left := m.renderLeft()
+		sep := m.renderSeparator()
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
+	}
 	parts := []string{header}
 	if m.searchMode {
 		parts = append(parts, m.renderSearchBar())
@@ -845,6 +858,7 @@ func (m Model) renderHelp() string {
 				{"c", "clear logs"},
 				{"M", "toggle mouse (for text select)"},
 				{"w", "toggle line wrap"},
+				{"z", "zoom logs (full width)"},
 			},
 		},
 		{
@@ -881,8 +895,13 @@ func (m Model) renderHelp() string {
 // the right panel. Total rendered = this + 2 (left+right border chars).
 // Layout: leftPanelWidth(22) + separator(1) + rightBorders(2) + rightContent = m.width
 func (m Model) rightPanelOuterWidth() int {
-	const separatorWidth = 1
-	w := m.width - leftPanelWidth - separatorWidth - 2
+	var w int
+	if m.zoomLogs {
+		w = m.width - 2 // just borders
+	} else {
+		const separatorWidth = 1
+		w = m.width - leftPanelWidth - separatorWidth - 2
+	}
 	if w < 10 {
 		w = 10
 	}
