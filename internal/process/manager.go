@@ -182,8 +182,16 @@ func (m *Manager) StartTarget(ctx context.Context, target config.RunTarget) erro
 	}
 
 	// Inject OpenTelemetry environment variables when OTel is enabled.
+	// Prefer the persisted port (written when the collector starts) over the
+	// in-memory value, which may be a stale random port from a different
+	// Manager instance (e.g. CLI restart, or reattach before
+	// EnsureOtelCollector has run).
 	if target.Otel && m.otelCfg != nil {
-		endpoint := fmt.Sprintf("http://127.0.0.1:%d", m.otelCfg.Port)
+		port := m.otelCfg.Port
+		if savedPort := m.loadOtelPort(); savedPort != 0 {
+			port = savedPort
+		}
+		endpoint := fmt.Sprintf("http://127.0.0.1:%d", port)
 		cmd.Env = append(cmd.Env, "OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint)
 	}
 
