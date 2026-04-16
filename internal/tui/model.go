@@ -200,6 +200,9 @@ type Model struct {
 
 	// zoomLogs hides the left panel so logs use the full terminal width.
 	zoomLogs bool
+	// mouseBeforeZoom remembers whether mouse was enabled before zoom,
+	// so we can restore it when leaving zoom mode.
+	mouseBeforeZoom bool
 
 	// runDir and projectRoot are used to reload targets from disk.
 	runDir      string
@@ -444,6 +447,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case matchKey(msg, m.keys.ZoomLogs):
 				m.zoomLogs = !m.zoomLogs
+				if m.zoomLogs {
+					// Remember mouse state so we can restore it on unzoom.
+					m.mouseBeforeZoom = m.mouseEnabled
+					if m.mouseEnabled {
+						m.mouseEnabled = false
+						cmds = append(cmds, tea.DisableMouse)
+					}
+				} else if m.mouseBeforeZoom {
+					m.mouseEnabled = true
+					cmds = append(cmds, tea.EnableMouseCellMotion)
+				}
 				m.resizeViewport()
 				m.refreshViewportContent()
 
@@ -795,6 +809,12 @@ func (m Model) renderRight() string {
 			Render(m.renderHelp())
 	}
 
+	// In zoom mode, render just the viewport with no chrome so text
+	// can be selected freely.
+	if m.zoomLogs {
+		return m.viewport.View()
+	}
+
 	// Panel title.
 	targetName := "(none)"
 	if len(m.targets) > 0 {
@@ -920,12 +940,19 @@ func (m Model) rightPanelInnerWidth() int {
 
 // resizeViewport recalculates viewport dimensions after a terminal resize.
 func (m *Model) resizeViewport() {
-	// Height: total - header (1) - search bar - right panel borders (2) - title line (1) - separator (1).
-	vpHeight := m.height - 1 - m.searchBarHeight() - 2 - 1 - 1
+	var vpHeight, vpWidth int
+	if m.zoomLogs {
+		// No borders, no title — just header and search bar.
+		vpHeight = m.height - 1 - m.searchBarHeight()
+		vpWidth = m.width
+	} else {
+		// Height: total - header (1) - search bar - right panel borders (2) - title line (1) - separator (1).
+		vpHeight = m.height - 1 - m.searchBarHeight() - 2 - 1 - 1
+		vpWidth = m.rightPanelInnerWidth()
+	}
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
-	vpWidth := m.rightPanelInnerWidth()
 
 	m.viewport.Width = vpWidth
 	m.viewport.Height = vpHeight
