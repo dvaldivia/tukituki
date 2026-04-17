@@ -792,49 +792,18 @@ func (m *Manager) loadOtelPort() int {
 
 // EnsureOtelCollector starts the bundled OTel collector if any target has
 // Otel enabled and the collector is not already running. It adds a virtual
-// "otel-errors" target to the Manager's target list.
+// "otel-errors" target to the Manager's target list, populated with the
+// full Command/Args so subsequent Restart calls reuse the same port.
 func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 	if m.otelCfg == nil || !config.HasOtelTarget(m.targets) {
 		return nil
 	}
 
-	target := config.RunTarget{
-		Name:        OtelTargetName,
-		Description: "OpenTelemetry error collector",
-		Virtual:     true,
-	}
-
-	// Always add the virtual target to the list so the TUI shows it,
-	// even when the collector is already running from a previous session.
-	found := false
-	for _, t := range m.targets {
-		if t.Name == OtelTargetName {
-			found = true
-			break
-		}
-	}
-	if !found {
-		m.targets = append(m.targets, target)
-	}
-
-	// Check if the collector is already running from a previous session.
-	m.mu.RLock()
-	alive := false
-	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
-		alive = true
-	}
-	m.mu.RUnlock()
-
-	if alive {
-		// Reuse the persisted port so running services keep working.
-		if savedPort := m.loadOtelPort(); savedPort != 0 {
-			m.otelCfg.Port = savedPort
-			return nil
-		}
-		// No saved port — collector is stale. Restart it.
-		if err := m.Stop(OtelTargetName); err != nil {
-			fmt.Fprintf(os.Stderr, "restart otel collector: stop: %v\n", err)
-		}
+	// Resolve the effective port once. Prefer the saved port so the collector
+	// keeps the same address across reattach/restart — any running target
+	// that already knows the old endpoint continues to reach it.
+	if savedPort := m.loadOtelPort(); savedPort != 0 {
+		m.otelCfg.Port = savedPort
 	}
 
 	exe, err := os.Executable()
@@ -842,14 +811,56 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		return fmt.Errorf("resolve executable path: %w", err)
 	}
 
-	target.Command = exe
-	target.Args = []string{"otel-collector", "--protocol", m.otelCfg.Protocol, "--severity", m.otelCfg.Severity, "--port", fmt.Sprintf("%d", m.otelCfg.Port)}
+	target := config.RunTarget{
+		Name:        OtelTargetName,
+		Description: "OpenTelemetry error collector",
+		Virtual:     true,
+		Command:     exe,
+		Args: []string{
+			"otel-collector",
+			"--protocol", m.otelCfg.Protocol,
+			"--severity", m.otelCfg.Severity,
+			"--port", fmt.Sprintf("%d", m.otelCfg.Port),
+		},
+	}
+
+	// Register (or refresh) the virtual target in m.targets with its full
+	// Command/Args so TUI restart ('r' key) reuses the same port.
+	m.upsertTarget(target)
+
+	// If the collector is already running, leave it alone — it's on the
+	// correct port (either saved and we loaded it above, or it was started
+	// earlier in this same Manager lifetime).
+	m.mu.RLock()
+	alive := false
+	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
+		alive = true
+	}
+	m.mu.RUnlock()
+	if alive {
+		return nil
+	}
 
 	if err := m.StartTarget(ctx, target); err != nil {
 		return err
 	}
 	m.saveOtelPort(m.otelCfg.Port)
 	return nil
+}
+
+// upsertTarget inserts or replaces the target with matching Name in
+// m.targets. Used to keep the virtual otel-errors entry in sync with the
+// current OTel configuration so TUI restart reuses the correct args.
+func (m *Manager) upsertTarget(t config.RunTarget) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, existing := range m.targets {
+		if existing.Name == t.Name {
+			m.targets[i] = t
+			return
+		}
+	}
+	m.targets = append(m.targets, t)
 }
 
 // StopOtelCollector stops the OTel collector if it is running.
