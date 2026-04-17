@@ -192,7 +192,14 @@ func (m *Manager) StartTarget(ctx context.Context, target config.RunTarget) erro
 			port = savedPort
 		}
 		endpoint := fmt.Sprintf("http://127.0.0.1:%d", port)
-		cmd.Env = append(cmd.Env, "OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint)
+		cmd.Env = append(cmd.Env,
+			"OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint,
+			// The bundled collector only implements the logs service.
+			// Disable metrics/traces exporters so SDK auto-config does
+			// not spam "Unimplemented" errors.
+			"OTEL_METRICS_EXPORTER=none",
+			"OTEL_TRACES_EXPORTER=none",
+		)
 	}
 
 	if err := cmd.Start(); err != nil {
