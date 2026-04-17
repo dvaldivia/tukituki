@@ -53,6 +53,10 @@ type keyMap struct {
 
 	// ZoomLogs hides the left panel so logs take the full terminal width.
 	ZoomLogs key.Binding
+
+	// Describe shows how the selected target was launched, including
+	// injected environment variables.
+	Describe key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -130,6 +134,10 @@ func defaultKeyMap() keyMap {
 		ZoomLogs: key.NewBinding(
 			key.WithKeys("z"),
 			key.WithHelp("z", "zoom logs (full width)"),
+		),
+		Describe: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "describe launch (env, cmd, workdir)"),
 		),
 	}
 }

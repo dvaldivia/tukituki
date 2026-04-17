@@ -57,4 +57,8 @@ type ManagerInterface interface {
 	// UpdateTargets replaces the target list so that subsequent Start/Restart
 	// calls use the latest configuration from disk.
 	UpdateTargets(targets []config.RunTarget)
+
+	// Describe returns a human-readable summary of how the named target is
+	// (or would be) launched: command, workdir, injected environment, etc.
+	Describe(name string) (string, error)
 }

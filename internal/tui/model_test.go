@@ -73,6 +73,7 @@ func (m *mockManager) DumpLog(_ string, _ string) error          { return nil }
 func (m *mockManager) ClearLog(_ string) error                   { return nil }
 func (m *mockManager) StopAll() error                            { return nil }
 func (m *mockManager) UpdateTargets(_ []config.RunTarget)        {}
+func (m *mockManager) Describe(_ string) (string, error)         { return "", nil }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

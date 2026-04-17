@@ -540,6 +540,127 @@ func (m *Manager) GetAllProcessStates() map[string]*state.ProcessState {
 	return out
 }
 
+// Describe returns a human-readable summary of how the named target is
+// (or would be) launched: shell invocation, workdir, target- and
+// tukituki-injected environment variables, OTel endpoint, and current
+// process status. Inherited parent environment is not included — only
+// variables tukituki actually sets or overlays.
+func (m *Manager) Describe(name string) (string, error) {
+	m.mu.RLock()
+	target, err := m.targetByName(name)
+	ps := m.st.Processes[name]
+	otelPort := 0
+	if m.otelCfg != nil {
+		otelPort = m.otelCfg.Port
+	}
+	m.mu.RUnlock()
+	if err != nil {
+		return "", err
+	}
+
+	if savedPort := m.loadOtelPort(); savedPort != 0 {
+		otelPort = savedPort
+	}
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	workdir := target.Workdir
+	if workdir != "" && !filepath.IsAbs(workdir) {
+		workdir = filepath.Join(m.projectRoot, workdir)
+	}
+	if workdir == "" {
+		workdir = m.projectRoot
+	}
+
+	var envs [][2]string
+	// Target-configured vars first.
+	for k, v := range target.Env {
+		envs = append(envs, [2]string{k, v})
+	}
+	// OTel-injected vars (same logic as StartTarget).
+	if target.Otel && m.otelCfg != nil && otelPort != 0 {
+		endpoint := fmt.Sprintf("http://127.0.0.1:%d", otelPort)
+		envs = append(envs,
+			[2]string{"OTEL_EXPORTER_OTLP_ENDPOINT", endpoint},
+			[2]string{"OTEL_METRICS_EXPORTER", "none"},
+			[2]string{"OTEL_TRACES_EXPORTER", "none"},
+		)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Target:       %s\n", target.Name)
+	if target.Description != "" {
+		fmt.Fprintf(&b, "Description:  %s\n", target.Description)
+	}
+	if target.Virtual {
+		fmt.Fprintf(&b, "Virtual:      true (managed by tukituki)\n")
+	}
+
+	if ps != nil {
+		status := ps.Status
+		if status == state.StatusRunning && !state.IsAlive(ps) {
+			status = state.StatusStopped
+		}
+		fmt.Fprintf(&b, "Status:       %s\n", status)
+		if ps.PID != 0 {
+			fmt.Fprintf(&b, "PID:          %d\n", ps.PID)
+		}
+		if !ps.StartedAt.IsZero() {
+			fmt.Fprintf(&b, "Started:      %s\n", ps.StartedAt.Format(time.RFC3339))
+		}
+		if ps.LogFile != "" {
+			fmt.Fprintf(&b, "Log file:     %s\n", ps.LogFile)
+		}
+		if ps.ExitCode != nil {
+			fmt.Fprintf(&b, "Exit code:    %d\n", *ps.ExitCode)
+		}
+	} else {
+		fmt.Fprintf(&b, "Status:       (never started)\n")
+	}
+
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Shell:        %s -l -c\n", shell)
+	fmt.Fprintf(&b, "Command:      %s\n", target.Command)
+	if len(target.Args) > 0 {
+		fmt.Fprintf(&b, "Args:\n")
+		for _, a := range target.Args {
+			fmt.Fprintf(&b, "  - %s\n", a)
+		}
+	}
+	fmt.Fprintf(&b, "Shell line:   %s\n", BuildShellCmd(target.Command, target.Args))
+	fmt.Fprintf(&b, "Workdir:      %s\n", workdir)
+
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "OTel:         %t", target.Otel)
+	if target.Otel && otelPort != 0 {
+		fmt.Fprintf(&b, " (endpoint: http://127.0.0.1:%d)", otelPort)
+	}
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Injected environment (parent env is inherited separately):\n")
+	if len(envs) == 0 {
+		fmt.Fprintf(&b, "  (none)\n")
+	} else {
+		for _, kv := range envs {
+			fmt.Fprintf(&b, "  %s=%s\n", kv[0], kv[1])
+		}
+	}
+
+	if len(target.Cleanup) > 0 {
+		fmt.Fprintln(&b)
+		fmt.Fprintf(&b, "Cleanup commands:\n")
+		for _, c := range target.Cleanup {
+			fmt.Fprintf(&b, "  - %s\n", c)
+		}
+	}
+
+	return b.String(), nil
+}
+
 // GetAllStatuses returns a map of process name → current status.
 func (m *Manager) GetAllStatuses() map[string]state.Status {
 	m.mu.RLock()

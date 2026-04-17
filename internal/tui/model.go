@@ -191,6 +191,10 @@ type Model struct {
 	// helpMode shows the keybinding help overlay in the right panel.
 	helpMode bool
 
+	// describeMode shows the launch description overlay in the right panel.
+	describeMode    bool
+	describeContent string
+
 	// mouseEnabled tracks whether bubbletea's mouse capture is on.
 	// When false the terminal regains native text-selection behaviour.
 	mouseEnabled bool
@@ -321,6 +325,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpMode = false
 			break
 		}
+		if m.describeMode {
+			// Any key dismisses the describe overlay.
+			m.describeMode = false
+			m.describeContent = ""
+			break
+		}
 		if m.searchMode {
 			switch {
 			case msg.Type == tea.KeyEscape:
@@ -429,6 +439,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case matchKey(msg, m.keys.Help):
 				m.helpMode = true
+
+			case matchKey(msg, m.keys.Describe):
+				if len(m.targets) > 0 {
+					name := m.targets[m.selected].Name
+					content, err := m.manager.Describe(name)
+					if err != nil {
+						m.statusMsg = fmt.Sprintf("describe %s: %s", name, err)
+					} else {
+						m.describeMode = true
+						m.describeContent = content
+					}
+				}
 
 			case matchKey(msg, m.keys.ToggleMouse):
 				if m.mouseEnabled {
@@ -809,6 +831,13 @@ func (m Model) renderRight() string {
 			Render(m.renderHelp())
 	}
 
+	if m.describeMode {
+		return rightPanelStyle.
+			Width(panelWidth).
+			Height(panelHeight).
+			Render(m.renderDescribe())
+	}
+
 	// In zoom mode, render just the viewport with no chrome so text
 	// can be selected freely.
 	if m.zoomLogs {
@@ -832,6 +861,30 @@ func (m Model) renderRight() string {
 		Width(panelWidth).
 		Height(panelHeight).
 		Render(content)
+}
+
+// renderDescribe returns the launch description shown when describeMode
+// is active: shell invocation, workdir, injected env vars, etc.
+func (m Model) renderDescribe() string {
+	innerWidth := m.rightPanelInnerWidth()
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ECEFF1")).Padding(0, 1)
+	dimStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+
+	name := "(none)"
+	if len(m.targets) > 0 {
+		name = m.targets[m.selected].Name
+	}
+	title := titleStyle.Render("Launch details: " + name)
+	divider := strings.Repeat("─", innerWidth)
+	hint := dimStyle.Render("(press any key to dismiss)")
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		title,
+		divider,
+		m.describeContent,
+		hint,
+	)
 }
 
 // renderHelp returns the keybinding reference shown when helpMode is active.
@@ -866,6 +919,7 @@ func (m Model) renderHelp() string {
 				{"s", "stop selected"},
 				{"S", "start selected"},
 				{"E", "edit run file"},
+				{"D", "describe launch (env, cmd, workdir)"},
 			},
 		},
 		{
