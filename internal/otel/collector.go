@@ -25,6 +25,8 @@ import (
 	"sync"
 
 	collogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	colmetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	coltracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
@@ -76,6 +78,10 @@ func (c *Collector) runGRPC(ctx context.Context) error {
 		minSeverity: c.MinSeverity,
 		out:         c.output(),
 	})
+	// Register no-op metrics/trace services so SDKs that auto-export
+	// all signals don't spam "Unimplemented" errors on every interval.
+	colmetricsv1.RegisterMetricsServiceServer(c.grpcServer, &noopMetricsHandler{})
+	coltracev1.RegisterTraceServiceServer(c.grpcServer, &noopTraceHandler{})
 
 	fmt.Fprintf(c.output(), "otel-collector: listening gRPC on :%d (min severity: %s)\n",
 		c.Port, c.MinSeverity.String())
@@ -100,6 +106,9 @@ func (c *Collector) runHTTP(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/v1/logs", handler)
+	// No-op metrics/trace endpoints: accept any payload and return {}.
+	mux.HandleFunc("/v1/metrics", noopHTTPHandler)
+	mux.HandleFunc("/v1/traces", noopHTTPHandler)
 
 	c.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", c.Port),
@@ -136,6 +145,39 @@ type logsHandler struct {
 func (h *logsHandler) Export(_ context.Context, req *collogsv1.ExportLogsServiceRequest) (*collogsv1.ExportLogsServiceResponse, error) {
 	processExportRequest(h.out, req, h.minSeverity)
 	return &collogsv1.ExportLogsServiceResponse{}, nil
+}
+
+// ─── No-op metrics/trace handlers ──────────────────────────────────────────
+//
+// The collector intentionally discards metrics and traces; it exists to
+// surface error logs only. Registering stub services prevents SDKs with
+// auto-exporters for all signals from logging "Unimplemented" errors.
+
+type noopMetricsHandler struct {
+	colmetricsv1.UnimplementedMetricsServiceServer
+}
+
+func (noopMetricsHandler) Export(context.Context, *colmetricsv1.ExportMetricsServiceRequest) (*colmetricsv1.ExportMetricsServiceResponse, error) {
+	return &colmetricsv1.ExportMetricsServiceResponse{}, nil
+}
+
+type noopTraceHandler struct {
+	coltracev1.UnimplementedTraceServiceServer
+}
+
+func (noopTraceHandler) Export(context.Context, *coltracev1.ExportTraceServiceRequest) (*coltracev1.ExportTraceServiceResponse, error) {
+	return &coltracev1.ExportTraceServiceResponse{}, nil
+}
+
+func noopHTTPHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_, _ = io.Copy(io.Discard, r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, "{}")
 }
 
 // ─── HTTP handler ───────────────────────────────────────────────────────────
