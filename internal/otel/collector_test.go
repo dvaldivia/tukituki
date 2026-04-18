@@ -90,15 +90,15 @@ func TestProcessExportRequest_PassesAboveThreshold(t *testing.T) {
 	})
 	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
 
-	lines := nonEmptyLines(buf.String())
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	bodyLines := serviceBodyLines(buf.String())
+	if len(bodyLines) != 2 {
+		t.Fatalf("expected 2 body lines, got %d: %v", len(bodyLines), bodyLines)
 	}
-	if !strings.Contains(lines[0], "[my-api] something broke") {
-		t.Errorf("line[0] = %q, want [my-api] something broke", lines[0])
+	if bodyLines[0] != "[my-api] something broke" {
+		t.Errorf("line[0] = %q, want [my-api] something broke", bodyLines[0])
 	}
-	if !strings.Contains(lines[1], "[my-api] panic") {
-		t.Errorf("line[1] = %q, want [my-api] panic", lines[1])
+	if bodyLines[1] != "[my-api] panic" {
+		t.Errorf("line[1] = %q, want [my-api] panic", bodyLines[1])
 	}
 }
 
@@ -124,12 +124,12 @@ func TestProcessExportRequest_TenInfoOneErrorTenInfo(t *testing.T) {
 	req := buildExportRequest("api", entries)
 	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
 
-	lines := nonEmptyLines(buf.String())
-	if len(lines) != 1 {
-		t.Fatalf("expected exactly 1 error line, got %d: %v", len(lines), lines)
+	bodyLines := serviceBodyLines(buf.String())
+	if len(bodyLines) != 1 {
+		t.Fatalf("expected exactly 1 error line, got %d: %v", len(bodyLines), bodyLines)
 	}
-	if lines[0] != "[api] database connection refused" {
-		t.Errorf("line = %q, want %q", lines[0], "[api] database connection refused")
+	if bodyLines[0] != "[api] database connection refused" {
+		t.Errorf("line = %q, want %q", bodyLines[0], "[api] database connection refused")
 	}
 }
 
@@ -149,9 +149,9 @@ func TestProcessExportRequest_UnknownServiceName(t *testing.T) {
 	}
 	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
 
-	lines := nonEmptyLines(buf.String())
-	if len(lines) != 1 || lines[0] != "[unknown] boom" {
-		t.Errorf("got %q, want %q", buf.String(), "[unknown] boom\n")
+	bodyLines := serviceBodyLines(buf.String())
+	if len(bodyLines) != 1 || bodyLines[0] != "[unknown] boom" {
+		t.Errorf("got body lines %v, want [unknown] boom\n\nfull output:\n%s", bodyLines, buf.String())
 	}
 }
 
@@ -557,6 +557,19 @@ func nonEmptyLines(s string) []string {
 	var out []string
 	for _, l := range strings.Split(s, "\n") {
 		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// serviceBodyLines extracts the "[service] body" header lines from the
+// collector output, ignoring separators, timestamp/severity lines, and
+// indented attribute lines.
+func serviceBodyLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.HasPrefix(l, "[") {
 			out = append(out, l)
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	collogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -224,11 +225,16 @@ func (h *httpLogsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ─── Shared processing ─────────────────────────────────────────────────────
 
+// logSeparator precedes every rendered log block so the TUI log viewer (and
+// anyone tailing the file) can visually delimit records.
+const logSeparator = "------------------------------------------------------------"
+
 // processExportRequest iterates over the OTLP log export request, filters by
 // severity, and writes matching records to out.
 func processExportRequest(out io.Writer, req *collogsv1.ExportLogsServiceRequest, minSeverity logsv1.SeverityNumber) {
 	for _, rl := range req.GetResourceLogs() {
-		serviceName := extractServiceName(rl.GetResource().GetAttributes())
+		resourceAttrs := rl.GetResource().GetAttributes()
+		serviceName := extractServiceName(resourceAttrs)
 		if serviceName == "" {
 			serviceName = "unknown"
 		}
@@ -241,10 +247,83 @@ func processExportRequest(out io.Writer, req *collogsv1.ExportLogsServiceRequest
 				if body == "" {
 					continue
 				}
-				fmt.Fprintf(out, "[%s] %s\n", serviceName, body)
+				renderLogRecord(out, serviceName, resourceAttrs, lr, body)
 			}
 		}
 	}
+}
+
+// renderLogRecord writes a multi-line block for a single OTLP log record.
+// Format:
+//
+//	------------------------------------------------------------
+//	2026-04-18T10:30:45.123Z  ERROR
+//	[service-name] log body
+//	  trace_id=...
+//	  span_id=...
+//	  resource:
+//	    host.name=...
+//	  attributes:
+//	    key=value
+func renderLogRecord(out io.Writer, serviceName string, resourceAttrs []*commonv1.KeyValue, lr *logsv1.LogRecord, body string) {
+	fmt.Fprintln(out, logSeparator)
+
+	ts := lr.GetTimeUnixNano()
+	if ts == 0 {
+		ts = lr.GetObservedTimeUnixNano()
+	}
+	sev := lr.GetSeverityText()
+	if sev == "" {
+		sev = severityLabel(lr.GetSeverityNumber())
+	}
+	if ts != 0 {
+		fmt.Fprintf(out, "%s  %s\n", time.Unix(0, int64(ts)).UTC().Format(time.RFC3339Nano), sev)
+	} else {
+		fmt.Fprintln(out, sev)
+	}
+
+	fmt.Fprintf(out, "[%s] %s\n", serviceName, body)
+
+	if traceID := lr.GetTraceId(); len(traceID) > 0 {
+		fmt.Fprintf(out, "  trace_id=%x\n", traceID)
+	}
+	if spanID := lr.GetSpanId(); len(spanID) > 0 {
+		fmt.Fprintf(out, "  span_id=%x\n", spanID)
+	}
+
+	extraResource := filterResourceAttrs(resourceAttrs)
+	if len(extraResource) > 0 {
+		fmt.Fprintln(out, "  resource:")
+		for _, kv := range extraResource {
+			fmt.Fprintf(out, "    %s=%s\n", kv.GetKey(), anyValueToString(kv.GetValue()))
+		}
+	}
+
+	if attrs := lr.GetAttributes(); len(attrs) > 0 {
+		fmt.Fprintln(out, "  attributes:")
+		for _, kv := range attrs {
+			fmt.Fprintf(out, "    %s=%s\n", kv.GetKey(), anyValueToString(kv.GetValue()))
+		}
+	}
+}
+
+// severityLabel strips the "SEVERITY_NUMBER_" prefix from the enum name so
+// output is "ERROR" instead of "SEVERITY_NUMBER_ERROR".
+func severityLabel(n logsv1.SeverityNumber) string {
+	return strings.TrimPrefix(n.String(), "SEVERITY_NUMBER_")
+}
+
+// filterResourceAttrs returns resource attributes excluding "service.name"
+// (which is already shown in the header line).
+func filterResourceAttrs(attrs []*commonv1.KeyValue) []*commonv1.KeyValue {
+	out := make([]*commonv1.KeyValue, 0, len(attrs))
+	for _, kv := range attrs {
+		if kv.GetKey() == "service.name" {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // extractServiceName finds the "service.name" attribute in a resource's
