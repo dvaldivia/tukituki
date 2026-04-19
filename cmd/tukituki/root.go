@@ -31,6 +31,7 @@ import (
 	"github.com/dvaldivia/tukituki/internal/config"
 	otelPkg "github.com/dvaldivia/tukituki/internal/otel"
 	"github.com/dvaldivia/tukituki/internal/process"
+	"github.com/dvaldivia/tukituki/internal/state"
 	"github.com/dvaldivia/tukituki/internal/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -561,6 +562,7 @@ type statusEntry struct {
 	Status      string `json:"status"`
 	Description string `json:"description,omitempty"`
 	PID         int    `json:"pid,omitempty"`
+	Address     string `json:"address,omitempty"`
 }
 
 func newStatusCmd() *cobra.Command {
@@ -589,6 +591,10 @@ Use --json for machine-readable output.`,
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
 			}
 
+			// Use the manager's post-attach target list so virtual targets
+			// (e.g. otel-errors) registered by AttachToExisting are visible.
+			targets = mgr.GetTargets()
+
 			// Filter to a single target if provided.
 			if len(args) == 1 {
 				t := findTarget(targets, args[0])
@@ -597,6 +603,7 @@ Use --json for machine-readable output.`,
 
 			statuses := mgr.GetAllStatuses()
 			states := mgr.GetAllProcessStates()
+			otelPort := mgr.OtelReceiverPort()
 
 			if jsonOutput {
 				entries := make([]statusEntry, 0, len(targets))
@@ -612,6 +619,9 @@ Use --json for machine-readable output.`,
 					}
 					if ps, ok := states[t.Name]; ok && ps != nil {
 						entry.PID = ps.PID
+					}
+					if t.Name == process.OtelTargetName && otelPort != 0 && status == state.StatusRunning {
+						entry.Address = fmt.Sprintf("127.0.0.1:%d", otelPort)
 					}
 					entries = append(entries, entry)
 				}
@@ -632,6 +642,9 @@ Use --json for machine-readable output.`,
 				desc := t.Description
 				if desc == "" {
 					desc = "-"
+				}
+				if t.Name == process.OtelTargetName && otelPort != 0 && status == state.StatusRunning {
+					desc = fmt.Sprintf("%s (listening on :%d)", desc, otelPort)
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\n", t.Name, status, desc)
 			}

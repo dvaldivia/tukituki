@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -751,6 +752,11 @@ func (m *Manager) DumpLog(name string, dest string) error {
 // AttachToExisting is called when processes were started by a previous
 // tukituki invocation.  It reads the state file, starts log file watchers
 // for still-running processes, and marks dead ones as stopped.
+//
+// If the virtual otel-errors collector is in the persisted state, a minimal
+// virtual target is registered so read-only callers (e.g. `status`) can list
+// it without having to call EnsureOtelCollector. Command/Args are left blank
+// and will be re-populated when EnsureOtelCollector runs.
 func (m *Manager) AttachToExisting() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -761,6 +767,14 @@ func (m *Manager) AttachToExisting() error {
 		if ps.Status == state.StatusRunning {
 			m.startLogTailer(name, ps.LogFile)
 		}
+	}
+
+	if _, ok := m.st.Processes[OtelTargetName]; ok {
+		m.upsertTargetLocked(config.RunTarget{
+			Name:        OtelTargetName,
+			Description: "OpenTelemetry error collector",
+			Virtual:     true,
+		})
 	}
 
 	return m.st.Save()
@@ -790,6 +804,20 @@ func (m *Manager) loadOtelPort() int {
 	return port
 }
 
+// OtelReceiverPort returns the port the OTel receiver is (or would be)
+// bound to. It prefers the persisted port written when the collector last
+// started, so the value is accurate even across reattach. Returns 0 when
+// OTel is not configured and no saved port exists.
+func (m *Manager) OtelReceiverPort() int {
+	if saved := m.loadOtelPort(); saved != 0 {
+		return saved
+	}
+	if m.otelCfg != nil {
+		return m.otelCfg.Port
+	}
+	return 0
+}
+
 // EnsureOtelCollector starts the bundled OTel collector if any target has
 // Otel enabled and the collector is not already running. It adds a virtual
 // "otel-errors" target to the Manager's target list, populated with the
@@ -799,12 +827,23 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		return nil
 	}
 
-	// Resolve the effective port once. Prefer the saved port so the collector
+	// Resolve the effective port. Prefer the saved port so the collector
 	// keeps the same address across reattach/restart — any running target
-	// that already knows the old endpoint continues to reach it.
-	if savedPort := m.loadOtelPort(); savedPort != 0 {
-		m.otelCfg.Port = savedPort
+	// that already knows the old endpoint continues to reach it. If the
+	// saved port is no longer bindable (something else grabbed it while
+	// tukituki was down), fall back to the freshly-picked port instead of
+	// letting the collector fail to start.
+	savedPort := m.loadOtelPort()
+	freshPort := m.otelCfg.Port
+	port := freshPort
+	if savedPort != 0 {
+		if portBindable(savedPort) {
+			port = savedPort
+		} else {
+			fmt.Fprintf(os.Stderr, "otel-errors: previous port %d is no longer available; switching to %d\n", savedPort, freshPort)
+		}
 	}
+	m.otelCfg.Port = port
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -845,7 +884,61 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		return err
 	}
 	m.saveOtelPort(m.otelCfg.Port)
+
+	// When the port we chose doesn't match what previously-running otel:true
+	// targets were told about, their OTEL_EXPORTER_OTLP_ENDPOINT is stale
+	// and they'll retry a dead port forever. Restart them so they re-read
+	// the endpoint env.
+	//
+	// Cases this covers:
+	//   - savedPort != port (saved port was taken, we picked a new one).
+	//   - savedPort == 0 with otel:true children already running (upgrade
+	//     from a pre-save-port tukituki version; children's env points at
+	//     some port from a previous invocation that we can't reconstruct).
+	//
+	// In the steady case (savedPort != 0 && savedPort == port) no running
+	// child needs to be restarted.
+	if savedPort != port {
+		m.restartRunningOtelTargets(ctx)
+	}
 	return nil
+}
+
+// portBindable reports whether the given TCP port on 127.0.0.1 can be
+// bound right now. Used to detect that a previously-saved collector port
+// has been taken by something else while tukituki was down.
+func portBindable(port int) bool {
+	lis, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	_ = lis.Close()
+	return true
+}
+
+// restartRunningOtelTargets restarts every non-virtual target with Otel=true
+// that is currently alive, so they re-read OTEL_EXPORTER_OTLP_ENDPOINT from
+// the environment injected by StartTarget.
+func (m *Manager) restartRunningOtelTargets(ctx context.Context) {
+	m.mu.RLock()
+	var toRestart []string
+	for _, t := range m.targets {
+		if !t.Otel || t.Name == OtelTargetName {
+			continue
+		}
+		ps, ok := m.st.Processes[t.Name]
+		if ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
+			toRestart = append(toRestart, t.Name)
+		}
+	}
+	m.mu.RUnlock()
+
+	for _, name := range toRestart {
+		fmt.Fprintf(os.Stderr, "otel-errors: restarting %s to pick up new collector endpoint\n", name)
+		if err := m.Restart(ctx, name); err != nil {
+			fmt.Fprintf(os.Stderr, "otel-errors: restart %s: %v\n", name, err)
+		}
+	}
 }
 
 // upsertTarget inserts or replaces the target with matching Name in
@@ -854,6 +947,12 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 func (m *Manager) upsertTarget(t config.RunTarget) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.upsertTargetLocked(t)
+}
+
+// upsertTargetLocked is the lock-free variant of upsertTarget; callers must
+// already hold m.mu for writing.
+func (m *Manager) upsertTargetLocked(t config.RunTarget) {
 	for i, existing := range m.targets {
 		if existing.Name == t.Name {
 			m.targets[i] = t
