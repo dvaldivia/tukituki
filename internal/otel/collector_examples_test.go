@@ -2,12 +2,14 @@ package otel
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -295,6 +297,119 @@ func TestExamples_OtelUpgradeNoSavedPort(t *testing.T) {
 			t.Fatalf("upgrade otel-errors.log missing %q:\n%s", want, log)
 		}
 	}
+}
+
+// ─── Restart leaves no orphans ──────────────────────────────────────────────
+// Exercises the real `go run` flow: start examples, record each service's
+// shell leader PID, restart them, and verify the old process groups are
+// fully reaped. This protects against the "go run supervisor orphaned under
+// init" regression where Stop returned while descendants were still alive
+// and left ppid=1 stragglers behind.
+
+func TestExamples_RestartLeavesNoOrphans(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping examples integration test in short mode")
+	}
+
+	root := projectRoot(t)
+	examplesDir := root + "examples"
+	if _, err := os.Stat(examplesDir + "/.run"); err != nil {
+		t.Fatalf("examples/.run not found: %v", err)
+	}
+
+	binPath := buildTukituki(t, root)
+	stateDir := t.TempDir() + "/.tukituki"
+
+	cleanPreviousRun(examplesDir, binPath)
+	defer func() {
+		_ = runCmd(examplesDir, binPath, "stop", "--state-dir", stateDir).Run()
+	}()
+
+	if out, err := runCmd(examplesDir, binPath, "start", "--state-dir", stateDir).CombinedOutput(); err != nil {
+		t.Fatalf("tukituki start: %v\n%s", err, out)
+	}
+	waitForPortTimeout(t, 8081, 30*time.Second)
+	waitForPortTimeout(t, 8082, 30*time.Second)
+	waitForPortTimeout(t, 8083, 30*time.Second)
+
+	services := []string{"go-api", "go-worker", "python-web"}
+	oldLeaders := readLeaderPIDs(t, stateDir, services)
+
+	for _, svc := range services {
+		if out, err := runCmd(examplesDir, binPath, "restart", svc, "--state-dir", stateDir).CombinedOutput(); err != nil {
+			t.Fatalf("tukituki restart %s: %v\n%s", svc, err, out)
+		}
+	}
+
+	// After each service's restart the OLD process group must be empty.
+	// If it isn't, the leader (shell) may have died while descendants
+	// (`go run`, the compiled binary) were still around — exactly the
+	// orphan-accumulation case the user hit.
+	for _, svc := range services {
+		oldPID := oldLeaders[svc]
+		if oldPID <= 0 {
+			t.Errorf("no prior leader PID recorded for %s", svc)
+			continue
+		}
+		// Give stragglers a brief grace period before failing.
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) && testGroupAlive(oldPID) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if testGroupAlive(oldPID) {
+			_ = syscall.Kill(-oldPID, syscall.SIGKILL)
+			t.Errorf("old process group for %s (leader=%d) still has members after restart — orphans leaked", svc, oldPID)
+		}
+	}
+
+	// And the new services should actually be serving again.
+	waitForPortTimeout(t, 8081, 30*time.Second)
+	waitForPortTimeout(t, 8082, 30*time.Second)
+	waitForPortTimeout(t, 8083, 30*time.Second)
+}
+
+// readLeaderPIDs returns the PID recorded in state.json for each named
+// target.
+func readLeaderPIDs(t *testing.T, stateDir string, names []string) map[string]int {
+	t.Helper()
+	data, err := os.ReadFile(stateDir + "/state.json")
+	if err != nil {
+		t.Fatalf("read state.json: %v", err)
+	}
+	var st struct {
+		Processes map[string]struct {
+			PID int `json:"pid"`
+		} `json:"processes"`
+	}
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatalf("parse state.json: %v\n%s", err, data)
+	}
+	out := make(map[string]int, len(names))
+	for _, n := range names {
+		if p, ok := st.Processes[n]; ok {
+			out[n] = p.PID
+		}
+	}
+	return out
+}
+
+// testGroupAlive mirrors groupAlive in the process package (which is
+// unexported here) for the e2e test.
+func testGroupAlive(leaderPID int) bool {
+	if leaderPID <= 0 {
+		return false
+	}
+	err := syscall.Kill(-leaderPID, 0)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return false
+	}
+	if errors.Is(err, syscall.EPERM) {
+		return true
+	}
+	return false
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ package process
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -404,8 +405,9 @@ func (m *Manager) Stop(name string) error {
 	m.mu.Unlock()
 
 	// Send SIGTERM to the entire process group (negative PID) so that child
-	// processes spawned by the shell wrapper (e.g. `go run` binaries) are
-	// also terminated.  The process group was created by Setpgid in Start().
+	// processes spawned by the shell wrapper (e.g. `go run` and the binary
+	// it supervises) are also terminated. The process group was created by
+	// Setpgid in Start().
 	pgid := -pid
 	if err := syscall.Kill(pgid, syscall.SIGTERM); err != nil {
 		// Fall back to signalling just the leader if the group signal fails.
@@ -418,11 +420,22 @@ func (m *Manager) Stop(name string) error {
 		}
 	}
 
-	// Wait up to 5 seconds for the process to exit.
+	// Wait up to 5 seconds for the WHOLE PROCESS GROUP to drain. It is not
+	// enough to check the leader's liveness: when the leader (the shell)
+	// dies quickly while descendants (e.g. a `go run` supervisor and its
+	// compiled binary) are still handling SIGTERM, a leader-only check
+	// returns early and leaves stragglers behind as ppid=1 orphans. The
+	// next Restart then spawns a fresh instance alongside them.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
-		if !state.IsAlive(ps) {
+		if !groupAlive(pid) {
+			m.mu.Lock()
+			if p, ok2 := m.st.Processes[name]; ok2 {
+				p.Status = state.StatusStopped
+				_ = m.st.Save()
+			}
+			m.mu.Unlock()
 			m.runCleanup(name)
 			return nil
 		}
@@ -436,6 +449,18 @@ func (m *Manager) Stop(name string) error {
 		}
 	}
 
+	// SIGKILL is immediate at the kernel level but the scheduler still
+	// needs a moment to actually dispatch exit across every group member.
+	// Poll briefly so we don't return while stragglers are mid-teardown —
+	// otherwise a following Start may race them for an exclusive port.
+	reapDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(reapDeadline) {
+		if !groupAlive(pid) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	m.mu.Lock()
 	if p, ok2 := m.st.Processes[name]; ok2 {
 		p.Status = state.StatusStopped
@@ -445,6 +470,29 @@ func (m *Manager) Stop(name string) error {
 
 	m.runCleanup(name)
 	return nil
+}
+
+// groupAlive reports whether any process is still a member of the process
+// group led by leaderPID. Uses kill(2) with signal 0 on the negative PID:
+// nil means at least one member exists, ESRCH means the group is empty.
+// EPERM means the group has members but we lack permission to signal them;
+// for groups we created this should not happen, but we treat it as "alive"
+// to avoid a false negative that would leak orphans.
+func groupAlive(leaderPID int) bool {
+	if leaderPID <= 0 {
+		return false
+	}
+	err := syscall.Kill(-leaderPID, 0)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return false
+	}
+	if errors.Is(err, syscall.EPERM) {
+		return true
+	}
+	return false
 }
 
 // runCleanup executes the Cleanup commands defined for the named target.

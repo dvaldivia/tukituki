@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -197,6 +198,69 @@ func TestManager_AttachToExisting(t *testing.T) {
 
 	// Clean up.
 	_ = m.Stop("attach-test")
+}
+
+// TestManager_StopDrainsProcessGroup simulates the `go run` orphan scenario:
+// the shell leader dies quickly while a descendant survives SIGTERM for a
+// while. Stop must wait for the whole process group to drain before
+// returning — otherwise the descendant is left as a ppid=1 orphan and a
+// following Restart spawns a second copy that fights it for resources.
+func TestManager_StopDrainsProcessGroup(t *testing.T) {
+	// The outer shell backgrounds a subshell that ignores SIGTERM and then
+	// exec-replaces itself with `sleep`. On SIGTERM:
+	//   - The exec'd `sleep` (leader PID) exits immediately.
+	//   - The backgrounded subshell traps SIGTERM and keeps sleeping.
+	// Stop must not return while the subshell is still alive.
+	target := config.RunTarget{
+		Name:    "group-drain",
+		Command: "sh",
+		Args:    []string{"-c", "{ trap '' TERM; sleep 30; } & exec sleep 30"},
+	}
+	m := newTestManager(t, []config.RunTarget{target})
+
+	ctx := context.Background()
+	if err := m.Start(ctx, "group-drain"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Give the shell time to fork the backgrounded subshell and exec.
+	time.Sleep(300 * time.Millisecond)
+
+	leaderPID := m.st.Processes["group-drain"].PID
+	if leaderPID <= 0 {
+		t.Fatalf("leader PID not set")
+	}
+	if !groupAlive(leaderPID) {
+		t.Fatalf("group %d should be alive after start", leaderPID)
+	}
+
+	// The SIGTERM-ignoring subshell will only die on SIGKILL, which Stop
+	// issues after its 5s SIGTERM grace period. Stop must not return
+	// before the group is actually empty.
+	start := time.Now()
+	if err := m.Stop("group-drain"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	if groupAlive(leaderPID) {
+		// Give the kernel a moment to reap stragglers and re-check; if
+		// still alive then we really did leak an orphan.
+		time.Sleep(200 * time.Millisecond)
+		if groupAlive(leaderPID) {
+			// Best effort: clean up leaked orphans so the test doesn't
+			// pollute the user's process list.
+			_ = syscall.Kill(-leaderPID, syscall.SIGKILL)
+			t.Fatalf("process group %d still has members after Stop (elapsed %s) — orphans leaked", leaderPID, elapsed)
+		}
+	}
+
+	// The SIGTERM-trap branch forces us into the SIGKILL path, so Stop
+	// should take at least the 5s SIGTERM grace period. If it returned
+	// much faster it means we exited the wait loop early.
+	if elapsed < 4*time.Second {
+		t.Errorf("Stop returned in %s; expected >=5s because SIGKILL path is required — wait loop likely exited on leader-only liveness", elapsed)
+	}
 }
 
 func TestBuildShellCmd(t *testing.T) {
