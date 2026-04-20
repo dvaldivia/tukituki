@@ -808,15 +808,17 @@ Use --json for machine-readable output.`,
 
 func newRestartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "restart <target-name>",
-		Short: "Restart a target",
-		Long: `Stop and then start the named target.
+		Use:   "restart <target-name> [target-name ...]",
+		Short: "Restart one or more targets",
+		Long: `Stop and then start each named target, in order.
 
-If the process is not currently running, it is simply started.
-Use --json for machine-readable output.`,
+If a process is not currently running, it is simply started.
+All names are validated up front; if any is unknown the command exits
+before restarting anything. Use --json for machine-readable output.`,
 		Example: `  tukituki restart api
+  tukituki restart api worker
   tukituki restart api --json`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
@@ -829,20 +831,33 @@ Use --json for machine-readable output.`,
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
 			}
 
-			name := args[0]
-			_ = findTarget(targets, name)
+			// Validate every name before restarting anything so a typo in
+			// the last arg doesn't leave earlier targets bounced.
+			for _, name := range args {
+				_ = findTarget(targets, name)
+			}
 
 			ctx := context.Background()
-			if err := mgr.Restart(ctx, name); err != nil {
-				return fmt.Errorf("restart %q: %w", name, err)
+			for _, name := range args {
+				if err := mgr.Restart(ctx, name); err != nil {
+					return fmt.Errorf("restart %q: %w", name, err)
+				}
 			}
 
 			statuses := mgr.GetAllStatuses()
-			st := statuses[name]
 			if jsonOutput {
-				return writeJSON(actionResult{Name: name, Status: string(st)})
+				results := make([]actionResult, len(args))
+				for i, name := range args {
+					results[i] = actionResult{Name: name, Status: string(statuses[name])}
+				}
+				if len(results) == 1 {
+					return writeJSON(results[0])
+				}
+				return writeJSON(results)
 			}
-			fmt.Printf("Restarted: %s (status: %s)\n", name, st)
+			for _, name := range args {
+				fmt.Printf("Restarted: %s (status: %s)\n", name, statuses[name])
+			}
 			return nil
 		},
 	}
