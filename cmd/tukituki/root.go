@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -193,33 +192,11 @@ func resolveOtelSeverity() string {
 	return "error"
 }
 
-// resolveOtelPort returns the effective OTel receiver port.
-// When not explicitly set, a random available port is chosen to avoid
-// collisions when multiple tukituki instances run on the same machine.
+// resolveOtelPort returns an explicit OTel port override (--otel-port flag
+// or TUKITUKI_OTEL_PORT env), or 0 if none is set. When 0, the Manager
+// resolves and persists a stable random port for this state directory.
 func resolveOtelPort() int {
-	if p := viper.GetInt("otel_port"); p != 0 {
-		return p
-	}
-	port, err := freePort()
-	if err != nil {
-		// Fallback to well-known defaults if we can't find a free port.
-		if resolveOtelProtocol() == "http" {
-			return 4318
-		}
-		return 4317
-	}
-	return port
-}
-
-// freePort asks the OS for an available TCP port.
-func freePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-	return port, nil
+	return viper.GetInt("otel_port")
 }
 
 // isTTY reports whether stdout is connected to a terminal.

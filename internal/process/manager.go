@@ -56,6 +56,13 @@ type Manager struct {
 	projectRoot string // absolute path where tukituki was invoked (workdirs are relative to this)
 
 	otelCfg *OtelConfig
+	// previousOtelPort is the port that was persisted on disk at the time
+	// SetOtelConfig ran for this Manager. Children started by a prior
+	// invocation will have OTEL_EXPORTER_OTLP_ENDPOINT pointing at this
+	// port; EnsureOtelCollector compares it against the effective port
+	// to decide whether running otel:true children need to be restarted
+	// to pick up a new endpoint.
+	previousOtelPort int
 
 	mu       sync.RWMutex
 	logLines map[string][]string           // in-memory ring buffer of last 1000 lines per target
@@ -89,9 +96,80 @@ func NewManager(targets []config.RunTarget, stateDir string, projectRoot string)
 	return m, nil
 }
 
-// SetOtelConfig sets the OpenTelemetry collector configuration.
+// SetOtelConfig sets the OpenTelemetry collector configuration and resolves
+// a stable port for this state directory.
+//
+// If cfg.Port is non-zero (explicit user override via flag or env), that
+// value is used and persisted so a later invocation without the override
+// finds the same port. If cfg.Port is zero, the previously-persisted port
+// is reused when still usable (free, or held by our own running collector);
+// otherwise a free random port is picked and persisted to .tukituki/otel-port.
+//
+// Resolving here — at Manager construction, before AttachToExisting — means
+// every command path (start, restart, status, TUI) sees the same port for
+// the same state directory, eliminating drift between the collector's bind
+// address and the OTEL_EXPORTER_OTLP_ENDPOINT injected into otel:true
+// children.
 func (m *Manager) SetOtelConfig(cfg OtelConfig) {
 	m.otelCfg = &cfg
+	// Snapshot the on-disk port BEFORE any potential overwrite. Children
+	// started by a previous Manager instance had their env baked against
+	// this value; EnsureOtelCollector uses it to detect drift.
+	m.previousOtelPort = m.loadOtelPort()
+
+	if cfg.Port != 0 {
+		m.saveOtelPort(cfg.Port)
+		return
+	}
+
+	if m.previousOtelPort != 0 && m.savedOtelPortReusable(m.previousOtelPort) {
+		m.otelCfg.Port = m.previousOtelPort
+		return
+	}
+
+	port, err := allocateFreePort()
+	if err != nil {
+		// Fall back to the well-known OTLP defaults so the rest of the
+		// pipeline has *some* port to use; the actual bind may still fail
+		// at collector start time.
+		if cfg.Protocol == "http" {
+			port = 4318
+		} else {
+			port = 4317
+		}
+	}
+	if m.previousOtelPort != 0 {
+		fmt.Fprintf(os.Stderr, "otel-errors: previous port %d is no longer available; switching to %d\n", m.previousOtelPort, port)
+	}
+	m.otelCfg.Port = port
+	m.saveOtelPort(port)
+}
+
+// savedOtelPortReusable reports whether a previously-persisted port can
+// still be used. A port is reusable if it can be bound now (no one holds
+// it) or if our recorded otel-errors collector PID is alive (i.e. we own
+// the process currently bound to that port).
+func (m *Manager) savedOtelPortReusable(port int) bool {
+	if portBindable(port) {
+		return true
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if ps, ok := m.st.Processes[OtelTargetName]; ok && state.IsAlive(ps) {
+		return true
+	}
+	return false
+}
+
+// allocateFreePort asks the OS for an available TCP port on loopback.
+func allocateFreePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
 }
 
 // UpdateTargets replaces the target list so that subsequent Start/Restart
@@ -184,16 +262,10 @@ func (m *Manager) StartTarget(ctx context.Context, target config.RunTarget) erro
 	}
 
 	// Inject OpenTelemetry environment variables when OTel is enabled.
-	// Prefer the persisted port (written when the collector starts) over the
-	// in-memory value, which may be a stale random port from a different
-	// Manager instance (e.g. CLI restart, or reattach before
-	// EnsureOtelCollector has run).
-	if target.Otel && m.otelCfg != nil {
-		port := m.otelCfg.Port
-		if savedPort := m.loadOtelPort(); savedPort != 0 {
-			port = savedPort
-		}
-		endpoint := fmt.Sprintf("http://127.0.0.1:%d", port)
+	// The port was resolved and persisted by SetOtelConfig so it is stable
+	// for every target started against this state directory.
+	if target.Otel && m.otelCfg != nil && m.otelCfg.Port != 0 {
+		endpoint := fmt.Sprintf("http://127.0.0.1:%d", m.otelCfg.Port)
 		cmd.Env = append(cmd.Env,
 			"OTEL_EXPORTER_OTLP_ENDPOINT="+endpoint,
 			// The bundled collector only implements the logs service.
@@ -607,10 +679,6 @@ func (m *Manager) Describe(name string) (string, error) {
 		return "", err
 	}
 
-	if savedPort := m.loadOtelPort(); savedPort != 0 {
-		otelPort = savedPort
-	}
-
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
@@ -801,10 +869,11 @@ func (m *Manager) DumpLog(name string, dest string) error {
 // tukituki invocation.  It reads the state file, starts log file watchers
 // for still-running processes, and marks dead ones as stopped.
 //
-// If the virtual otel-errors collector is in the persisted state, a minimal
-// virtual target is registered so read-only callers (e.g. `status`) can list
-// it without having to call EnsureOtelCollector. Command/Args are left blank
-// and will be re-populated when EnsureOtelCollector runs.
+// If the virtual otel-errors collector is in the persisted state, the
+// virtual target is registered with a fully-populated Command/Args so that
+// command paths which don't call EnsureOtelCollector (e.g. `tukituki
+// restart otel-errors`) can still launch it. The port preferred is the one
+// previously persisted to disk; if absent, the configured default is used.
 func (m *Manager) AttachToExisting() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -818,14 +887,57 @@ func (m *Manager) AttachToExisting() error {
 	}
 
 	if _, ok := m.st.Processes[OtelTargetName]; ok {
-		m.upsertTargetLocked(config.RunTarget{
-			Name:        OtelTargetName,
-			Description: "OpenTelemetry error collector",
-			Virtual:     true,
-		})
+		m.upsertTargetLocked(m.virtualOtelTarget())
 	}
 
 	return m.st.Save()
+}
+
+// virtualOtelTarget builds the virtual otel-errors RunTarget. When the
+// OTel config and binary path are available, Command/Args are populated so
+// the target is launchable; otherwise a minimal stub is returned so that
+// read-only callers (e.g. `status`) can still list the entry.
+func (m *Manager) virtualOtelTarget() config.RunTarget {
+	if m.otelCfg == nil || m.otelCfg.Port == 0 {
+		return config.RunTarget{
+			Name:        OtelTargetName,
+			Description: "OpenTelemetry error collector",
+			Virtual:     true,
+		}
+	}
+	t, err := m.buildOtelTarget(m.otelCfg.Port)
+	if err != nil {
+		return config.RunTarget{
+			Name:        OtelTargetName,
+			Description: "OpenTelemetry error collector",
+			Virtual:     true,
+		}
+	}
+	return t
+}
+
+// buildOtelTarget constructs the virtual otel-errors RunTarget for the
+// current OTel configuration, using the given listener port. The command
+// is the running tukituki binary; the collector runs as the
+// `tukituki otel-collector` subcommand. Returns an error if the executable
+// path cannot be resolved.
+func (m *Manager) buildOtelTarget(port int) (config.RunTarget, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return config.RunTarget{}, fmt.Errorf("resolve executable path: %w", err)
+	}
+	return config.RunTarget{
+		Name:        OtelTargetName,
+		Description: "OpenTelemetry error collector",
+		Virtual:     true,
+		Command:     exe,
+		Args: []string{
+			"otel-collector",
+			"--protocol", m.otelCfg.Protocol,
+			"--severity", m.otelCfg.Severity,
+			"--port", fmt.Sprintf("%d", port),
+		},
+	}, nil
 }
 
 // otelPortFile returns the path to the file that persists the OTel collector
@@ -853,13 +965,10 @@ func (m *Manager) loadOtelPort() int {
 }
 
 // OtelReceiverPort returns the port the OTel receiver is (or would be)
-// bound to. It prefers the persisted port written when the collector last
-// started, so the value is accurate even across reattach. Returns 0 when
-// OTel is not configured and no saved port exists.
+// bound to. The port is resolved (and persisted) by SetOtelConfig so the
+// returned value is consistent across all command paths. Returns 0 when
+// OTel is not configured.
 func (m *Manager) OtelReceiverPort() int {
-	if saved := m.loadOtelPort(); saved != 0 {
-		return saved
-	}
 	if m.otelCfg != nil {
 		return m.otelCfg.Port
 	}
@@ -867,63 +976,47 @@ func (m *Manager) OtelReceiverPort() int {
 }
 
 // EnsureOtelCollector starts the bundled OTel collector if any target has
-// Otel enabled and the collector is not already running. It adds a virtual
-// "otel-errors" target to the Manager's target list, populated with the
-// full Command/Args so subsequent Restart calls reuse the same port.
+// Otel enabled and the collector is not already running. The port was
+// resolved and persisted by SetOtelConfig; this method only re-picks a
+// port if the resolved one became unbindable since construction (and
+// nothing of ours owns it).
 func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 	if m.otelCfg == nil || !config.HasOtelTarget(m.targets) {
 		return nil
 	}
 
-	// Resolve the effective port. Prefer the saved port so the collector
-	// keeps the same address across reattach/restart — any running target
-	// that already knows the old endpoint continues to reach it. If the
-	// saved port is no longer bindable (something else grabbed it while
-	// tukituki was down), fall back to the freshly-picked port instead of
-	// letting the collector fail to start.
-	savedPort := m.loadOtelPort()
-	freshPort := m.otelCfg.Port
-	port := freshPort
-	if savedPort != 0 {
-		if portBindable(savedPort) {
-			port = savedPort
-		} else {
-			fmt.Fprintf(os.Stderr, "otel-errors: previous port %d is no longer available; switching to %d\n", savedPort, freshPort)
-		}
-	}
-	m.otelCfg.Port = port
-
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve executable path: %w", err)
-	}
-
-	target := config.RunTarget{
-		Name:        OtelTargetName,
-		Description: "OpenTelemetry error collector",
-		Virtual:     true,
-		Command:     exe,
-		Args: []string{
-			"otel-collector",
-			"--protocol", m.otelCfg.Protocol,
-			"--severity", m.otelCfg.Severity,
-			"--port", fmt.Sprintf("%d", m.otelCfg.Port),
-		},
-	}
-
-	// Register (or refresh) the virtual target in m.targets with its full
-	// Command/Args so TUI restart ('r' key) reuses the same port.
-	m.upsertTarget(target)
-
-	// If the collector is already running, leave it alone — it's on the
-	// correct port (either saved and we loaded it above, or it was started
-	// earlier in this same Manager lifetime).
+	// If the collector is already running on the resolved port, nothing to do.
 	m.mu.RLock()
 	alive := false
 	if ps, ok := m.st.Processes[OtelTargetName]; ok && ps.Status == state.StatusRunning && state.IsAlive(ps) {
 		alive = true
 	}
 	m.mu.RUnlock()
+
+	originalPort := m.otelCfg.Port
+	if !alive && !portBindable(originalPort) {
+		// The port we resolved at SetOtelConfig time has been claimed by
+		// something else and we don't own a collector on it. Pick a new
+		// port; otel:true children that were started against the old port
+		// will need a restart so they re-read OTEL_EXPORTER_OTLP_ENDPOINT.
+		newPort, err := allocateFreePort()
+		if err != nil {
+			return fmt.Errorf("otel-errors: previous port %d is no longer available and no alternative could be allocated: %w", originalPort, err)
+		}
+		fmt.Fprintf(os.Stderr, "otel-errors: previous port %d is no longer available; switching to %d\n", originalPort, newPort)
+		m.otelCfg.Port = newPort
+		m.saveOtelPort(newPort)
+	}
+
+	target, err := m.buildOtelTarget(m.otelCfg.Port)
+	if err != nil {
+		return err
+	}
+
+	// Register (or refresh) the virtual target in m.targets with its full
+	// Command/Args so TUI restart ('r' key) reuses the same port.
+	m.upsertTarget(target)
+
 	if alive {
 		return nil
 	}
@@ -931,22 +1024,16 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 	if err := m.StartTarget(ctx, target); err != nil {
 		return err
 	}
-	m.saveOtelPort(m.otelCfg.Port)
 
-	// When the port we chose doesn't match what previously-running otel:true
-	// targets were told about, their OTEL_EXPORTER_OTLP_ENDPOINT is stale
-	// and they'll retry a dead port forever. Restart them so they re-read
-	// the endpoint env.
-	//
-	// Cases this covers:
-	//   - savedPort != port (saved port was taken, we picked a new one).
-	//   - savedPort == 0 with otel:true children already running (upgrade
-	//     from a pre-save-port tukituki version; children's env points at
-	//     some port from a previous invocation that we can't reconstruct).
-	//
-	// In the steady case (savedPort != 0 && savedPort == port) no running
-	// child needs to be restarted.
-	if savedPort != port {
+	// Restart any running otel:true children whose OTEL_EXPORTER_OTLP_ENDPOINT
+	// no longer matches the effective port. Two situations trigger this:
+	//   - SetOtelConfig swapped the port (previousOtelPort != m.otelCfg.Port)
+	//     because the persisted port was unreusable, OR because no port file
+	//     existed and a fresh one was allocated.
+	//   - EnsureOtelCollector swapped the port mid-flight after losing a
+	//     race with another process for the resolved port.
+	// In the steady case (port unchanged) this is a no-op.
+	if m.previousOtelPort != m.otelCfg.Port || originalPort != m.otelCfg.Port {
 		m.restartRunningOtelTargets(ctx)
 	}
 	return nil

@@ -16,6 +16,8 @@ package process
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -299,5 +301,169 @@ func TestNewManager_CreatesDirs(t *testing.T) {
 	logsDir := filepath.Join(stateDir, "logs")
 	if _, err := os.Stat(logsDir); os.IsNotExist(err) {
 		t.Errorf("logs dir was not created: %s", logsDir)
+	}
+}
+
+// TestSetOtelConfig_PicksAndPersistsPort verifies that when no explicit
+// port is configured, SetOtelConfig allocates one and writes it to
+// .tukituki/otel-port so subsequent invocations can recover it.
+func TestSetOtelConfig_PicksAndPersistsPort(t *testing.T) {
+	base := t.TempDir()
+	stateDir := filepath.Join(base, ".tukituki")
+	m, err := NewManager(nil, stateDir, base)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	m.SetOtelConfig(OtelConfig{Protocol: "grpc", Severity: "error"})
+
+	if m.otelCfg.Port == 0 {
+		t.Fatal("expected SetOtelConfig to assign a non-zero port")
+	}
+
+	portFile := filepath.Join(stateDir, "otel-port")
+	if _, err := os.Stat(portFile); err != nil {
+		t.Fatalf("otel-port file should exist at %s: %v", portFile, err)
+	}
+	if saved := m.loadOtelPort(); saved != m.otelCfg.Port {
+		t.Errorf("persisted port %d != in-memory port %d", saved, m.otelCfg.Port)
+	}
+}
+
+// TestSetOtelConfig_ReusesPersistedPort simulates two back-to-back tukituki
+// invocations against the same state directory: the second must pick up
+// the same port the first wrote, otherwise children started by the first
+// invocation would have a stale OTEL_EXPORTER_OTLP_ENDPOINT.
+func TestSetOtelConfig_ReusesPersistedPort(t *testing.T) {
+	base := t.TempDir()
+	stateDir := filepath.Join(base, ".tukituki")
+
+	m1, err := NewManager(nil, stateDir, base)
+	if err != nil {
+		t.Fatalf("NewManager 1: %v", err)
+	}
+	m1.SetOtelConfig(OtelConfig{Protocol: "grpc", Severity: "error"})
+	firstPort := m1.otelCfg.Port
+
+	m2, err := NewManager(nil, stateDir, base)
+	if err != nil {
+		t.Fatalf("NewManager 2: %v", err)
+	}
+	m2.SetOtelConfig(OtelConfig{Protocol: "grpc", Severity: "error"})
+
+	if m2.otelCfg.Port != firstPort {
+		t.Errorf("port drifted across Manager instances: %d -> %d", firstPort, m2.otelCfg.Port)
+	}
+}
+
+// TestSetOtelConfig_ExplicitPortPersists confirms an explicit user-provided
+// port (e.g. via --otel-port) wins and is written to the state file so a
+// later invocation without the flag finds the same port.
+func TestSetOtelConfig_ExplicitPortPersists(t *testing.T) {
+	base := t.TempDir()
+	stateDir := filepath.Join(base, ".tukituki")
+	m, err := NewManager(nil, stateDir, base)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	explicit, err := allocateFreePort()
+	if err != nil {
+		t.Fatalf("allocateFreePort: %v", err)
+	}
+	m.SetOtelConfig(OtelConfig{Port: explicit, Protocol: "grpc", Severity: "error"})
+
+	if m.otelCfg.Port != explicit {
+		t.Errorf("expected explicit port %d, got %d", explicit, m.otelCfg.Port)
+	}
+	if saved := m.loadOtelPort(); saved != explicit {
+		t.Errorf("expected persisted port %d, got %d", explicit, saved)
+	}
+}
+
+// TestSetOtelConfig_PortConsistentAcrossEnvAndTarget verifies the cross-
+// service invariant: the --port arg on the virtual otel-errors target
+// (what the collector binds) matches OTEL_EXPORTER_OTLP_ENDPOINT injected
+// into otel:true children. A drift between the two is what made the
+// server connect to one port while the collector listened on another.
+func TestSetOtelConfig_PortConsistentAcrossEnvAndTarget(t *testing.T) {
+	server := config.RunTarget{
+		Name:    "server",
+		Command: "true",
+		Otel:    true,
+	}
+	base := t.TempDir()
+	stateDir := filepath.Join(base, ".tukituki")
+	m, err := NewManager([]config.RunTarget{server}, stateDir, base)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	m.SetOtelConfig(OtelConfig{Protocol: "grpc", Severity: "error"})
+
+	collector := m.virtualOtelTarget()
+	var collectorPortArg string
+	for i := 0; i < len(collector.Args)-1; i++ {
+		if collector.Args[i] == "--port" {
+			collectorPortArg = collector.Args[i+1]
+			break
+		}
+	}
+	if collectorPortArg == "" {
+		t.Fatalf("virtual collector target had no --port arg: %#v", collector.Args)
+	}
+
+	desc, err := m.Describe("server")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	wantEnv := "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:" + collectorPortArg
+	if !strings.Contains(desc, wantEnv) {
+		t.Errorf("server env should contain %q; describe output:\n%s", wantEnv, desc)
+	}
+
+	if got := m.OtelReceiverPort(); fmt.Sprintf("%d", got) != collectorPortArg {
+		t.Errorf("OtelReceiverPort=%d but collector --port=%s", got, collectorPortArg)
+	}
+}
+
+// TestSetOtelConfig_StolenPortFallback ensures that if the persisted port
+// has been claimed by some unrelated process between invocations and our
+// own collector is not the holder, SetOtelConfig picks a new port instead
+// of silently resurrecting a dead endpoint.
+func TestSetOtelConfig_StolenPortFallback(t *testing.T) {
+	base := t.TempDir()
+	stateDir := filepath.Join(base, ".tukituki")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+
+	// Persist a port file pointing at a port that we then occupy with an
+	// unrelated listener. With no otel-errors process recorded in state,
+	// the saved port must be treated as unusable.
+	stolen, err := allocateFreePort()
+	if err != nil {
+		t.Fatalf("allocateFreePort: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "otel-port"), []byte(fmt.Sprintf("%d", stolen)), 0o644); err != nil {
+		t.Fatalf("seed otel-port: %v", err)
+	}
+	lis, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", stolen))
+	if err != nil {
+		t.Fatalf("occupy stolen port: %v", err)
+	}
+	defer lis.Close()
+
+	m, err := NewManager(nil, stateDir, base)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	m.SetOtelConfig(OtelConfig{Protocol: "grpc", Severity: "error"})
+
+	if m.otelCfg.Port == stolen {
+		t.Errorf("expected fresh port, got the stolen one (%d)", stolen)
+	}
+	if m.otelCfg.Port == 0 {
+		t.Error("expected a non-zero fallback port")
 	}
 }
