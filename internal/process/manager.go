@@ -936,6 +936,7 @@ func (m *Manager) buildOtelTarget(port int) (config.RunTarget, error) {
 			"--protocol", m.otelCfg.Protocol,
 			"--severity", m.otelCfg.Severity,
 			"--port", fmt.Sprintf("%d", port),
+			"--notify-socket", m.OtelNotifySocket(),
 		},
 	}, nil
 }
@@ -944,6 +945,15 @@ func (m *Manager) buildOtelTarget(port int) (config.RunTarget, error) {
 // port across detach/reattach cycles.
 func (m *Manager) otelPortFile() string {
 	return filepath.Join(m.stateDir, "otel-port")
+}
+
+// OtelNotifySocket returns the absolute path of the Unix domain socket used
+// by the otel-collector to push error events to the TUI. The socket lives
+// inside the state directory so each tukituki invocation in a project shares
+// it. The path is stable across runs; the collector recreates the socket
+// file on startup.
+func (m *Manager) OtelNotifySocket() string {
+	return filepath.Join(m.stateDir, "otel-notify.sock")
 }
 
 // saveOtelPort writes the active collector port to disk.

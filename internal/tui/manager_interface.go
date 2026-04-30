@@ -61,4 +61,9 @@ type ManagerInterface interface {
 	// Describe returns a human-readable summary of how the named target is
 	// (or would be) launched: command, workdir, injected environment, etc.
 	Describe(name string) (string, error)
+
+	// OtelNotifySocket returns the absolute path of the Unix domain socket
+	// on which the otel-collector publishes error notifications. Empty if
+	// no OTel target is configured.
+	OtelNotifySocket() string
 }

@@ -21,10 +21,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	notifypb "github.com/dvaldivia/tukituki/internal/otel/notify"
 	collogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -43,8 +45,16 @@ type Collector struct {
 	MinSeverity logsv1.SeverityNumber
 	Output      io.Writer // defaults to os.Stdout if nil
 
-	grpcServer *grpc.Server
-	httpServer *http.Server
+	// NotifySocket is the path to a Unix domain socket on which the collector
+	// serves the Notifier gRPC service. When non-empty, every log record that
+	// passes the severity filter is also pushed to any subscribed clients
+	// (typically the tukituki TUI). Empty disables the notifier.
+	NotifySocket string
+
+	grpcServer   *grpc.Server
+	httpServer   *http.Server
+	notifyServer *grpc.Server
+	hub          *notifyHub
 }
 
 func (c *Collector) output() io.Writer {
@@ -56,6 +66,15 @@ func (c *Collector) output() io.Writer {
 
 // Run starts the OTLP receiver and blocks until ctx is cancelled.
 func (c *Collector) Run(ctx context.Context) error {
+	if c.NotifySocket != "" {
+		c.hub = newNotifyHub()
+		stop, err := c.startNotifyServer()
+		if err != nil {
+			return fmt.Errorf("start notifier on %s: %w", c.NotifySocket, err)
+		}
+		defer stop()
+	}
+
 	switch c.Protocol {
 	case "grpc":
 		return c.runGRPC(ctx)
@@ -64,6 +83,39 @@ func (c *Collector) Run(ctx context.Context) error {
 	default:
 		return fmt.Errorf("unsupported protocol %q", c.Protocol)
 	}
+}
+
+// startNotifyServer creates the Unix socket gRPC server used to push error
+// events to the TUI. It returns a stop function that shuts the server down
+// and removes the socket file. Any pre-existing socket at the same path is
+// removed first (e.g. left behind by a crashed prior collector).
+func (c *Collector) startNotifyServer() (func(), error) {
+	_ = os.Remove(c.NotifySocket)
+
+	if dir := filepath.Dir(c.NotifySocket); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create socket dir: %w", err)
+		}
+	}
+
+	lis, err := net.Listen("unix", c.NotifySocket)
+	if err != nil {
+		return nil, err
+	}
+
+	c.notifyServer = grpc.NewServer()
+	notifypb.RegisterNotifierServer(c.notifyServer, c.hub)
+
+	go func() {
+		_ = c.notifyServer.Serve(lis)
+	}()
+
+	stop := func() {
+		c.notifyServer.GracefulStop()
+		c.hub.shutdown(context.Background())
+		_ = os.Remove(c.NotifySocket)
+	}
+	return stop, nil
 }
 
 // ─── gRPC receiver ──────────────────────────────────────────────────────────
@@ -78,6 +130,7 @@ func (c *Collector) runGRPC(ctx context.Context) error {
 	collogsv1.RegisterLogsServiceServer(c.grpcServer, &logsHandler{
 		minSeverity: c.MinSeverity,
 		out:         c.output(),
+		hub:         c.hub,
 	})
 	// Register no-op metrics/trace services so SDKs that auto-export
 	// all signals don't spam "Unimplemented" errors on every interval.
@@ -103,7 +156,7 @@ func (c *Collector) runGRPC(ctx context.Context) error {
 // ─── HTTP receiver ──────────────────────────────────────────────────────────
 
 func (c *Collector) runHTTP(ctx context.Context) error {
-	handler := &httpLogsHandler{minSeverity: c.MinSeverity, out: c.output()}
+	handler := &httpLogsHandler{minSeverity: c.MinSeverity, out: c.output(), hub: c.hub}
 
 	mux := http.NewServeMux()
 	mux.Handle("/v1/logs", handler)
@@ -141,10 +194,11 @@ type logsHandler struct {
 	collogsv1.UnimplementedLogsServiceServer
 	minSeverity logsv1.SeverityNumber
 	out         io.Writer
+	hub         *notifyHub
 }
 
 func (h *logsHandler) Export(_ context.Context, req *collogsv1.ExportLogsServiceRequest) (*collogsv1.ExportLogsServiceResponse, error) {
-	processExportRequest(h.out, req, h.minSeverity)
+	processExportRequest(h.out, req, h.minSeverity, h.hub)
 	return &collogsv1.ExportLogsServiceResponse{}, nil
 }
 
@@ -186,6 +240,7 @@ func noopHTTPHandler(w http.ResponseWriter, r *http.Request) {
 type httpLogsHandler struct {
 	minSeverity logsv1.SeverityNumber
 	out         io.Writer
+	hub         *notifyHub
 }
 
 func (h *httpLogsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +271,7 @@ func (h *httpLogsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	processExportRequest(h.out, req, h.minSeverity)
+	processExportRequest(h.out, req, h.minSeverity, h.hub)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -230,8 +285,9 @@ func (h *httpLogsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 const logSeparator = "------------------------------------------------------------"
 
 // processExportRequest iterates over the OTLP log export request, filters by
-// severity, and writes matching records to out.
-func processExportRequest(out io.Writer, req *collogsv1.ExportLogsServiceRequest, minSeverity logsv1.SeverityNumber) {
+// severity, writes matching records to out, and (when hub is non-nil)
+// publishes a notification event for each one.
+func processExportRequest(out io.Writer, req *collogsv1.ExportLogsServiceRequest, minSeverity logsv1.SeverityNumber, hub *notifyHub) {
 	for _, rl := range req.GetResourceLogs() {
 		resourceAttrs := rl.GetResource().GetAttributes()
 		serviceName := extractServiceName(resourceAttrs)
@@ -248,6 +304,22 @@ func processExportRequest(out io.Writer, req *collogsv1.ExportLogsServiceRequest
 					continue
 				}
 				renderLogRecord(out, serviceName, resourceAttrs, lr, body)
+				if hub != nil {
+					ts := lr.GetTimeUnixNano()
+					if ts == 0 {
+						ts = lr.GetObservedTimeUnixNano()
+					}
+					sev := lr.GetSeverityText()
+					if sev == "" {
+						sev = severityLabel(lr.GetSeverityNumber())
+					}
+					hub.Publish(&notifypb.ErrorEvent{
+						TimestampUnixNano: int64(ts),
+						ServiceName:       serviceName,
+						Severity:          sev,
+						Body:              body,
+					})
+				}
 			}
 		}
 	}

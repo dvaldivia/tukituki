@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	notifypb "github.com/dvaldivia/tukituki/internal/otel/notify"
 	collogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -73,7 +75,7 @@ func TestProcessExportRequest_FiltersBelow(t *testing.T) {
 		{severity: logsv1.SeverityNumber_SEVERITY_NUMBER_DEBUG, body: "debug msg"},
 		{severity: logsv1.SeverityNumber_SEVERITY_NUMBER_WARN, body: "a warning"},
 	})
-	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
+	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR, nil)
 
 	if buf.Len() != 0 {
 		t.Errorf("expected no output for sub-ERROR logs, got: %q", buf.String())
@@ -88,7 +90,7 @@ func TestProcessExportRequest_PassesAboveThreshold(t *testing.T) {
 		{severity: logsv1.SeverityNumber_SEVERITY_NUMBER_FATAL, body: "panic"},
 		{severity: logsv1.SeverityNumber_SEVERITY_NUMBER_INFO, body: "info 2"},
 	})
-	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
+	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR, nil)
 
 	bodyLines := serviceBodyLines(buf.String())
 	if len(bodyLines) != 2 {
@@ -122,7 +124,7 @@ func TestProcessExportRequest_TenInfoOneErrorTenInfo(t *testing.T) {
 		})
 	}
 	req := buildExportRequest("api", entries)
-	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
+	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR, nil)
 
 	bodyLines := serviceBodyLines(buf.String())
 	if len(bodyLines) != 1 {
@@ -147,7 +149,7 @@ func TestProcessExportRequest_UnknownServiceName(t *testing.T) {
 			}},
 		}},
 	}
-	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR)
+	processExportRequest(&buf, req, logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR, nil)
 
 	bodyLines := serviceBodyLines(buf.String())
 	if len(bodyLines) != 1 || bodyLines[0] != "[unknown] boom" {
@@ -223,6 +225,104 @@ func TestCollectorGRPC_Integration(t *testing.T) {
 	if logLines[0] != "[my-service] critical failure in database" {
 		t.Errorf("got %q, want %q", logLines[0], "[my-service] critical failure in database")
 	}
+}
+
+// ─── Notify socket integration test ─────────────────────────────────────────
+
+func TestCollectorGRPC_NotifySocket(t *testing.T) {
+	port := freePort(t)
+	socket := filepath.Join(t.TempDir(), "otel-notify.sock")
+
+	var buf bytes.Buffer
+	c := &Collector{
+		Port:         port,
+		Protocol:     "grpc",
+		MinSeverity:  logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR,
+		Output:       &buf,
+		NotifySocket: socket,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.Run(ctx) }()
+
+	waitForPort(t, port)
+	waitForUnixSocket(t, socket)
+
+	notifyConn, err := grpc.NewClient(
+		"unix:"+socket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("dial notify socket: %v", err)
+	}
+	defer notifyConn.Close()
+
+	notifyClient := notifypb.NewNotifierClient(notifyConn)
+	stream, err := notifyClient.Subscribe(ctx, &notifypb.SubscribeRequest{})
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	// Send 1 INFO + 2 ERROR + 1 FATAL — only 3 should fire notifications.
+	otlpConn, err := grpc.NewClient(
+		fmt.Sprintf("dns:///127.0.0.1:%d", port),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("dial OTLP: %v", err)
+	}
+	defer otlpConn.Close()
+
+	logsClient := collogsv1.NewLogsServiceClient(otlpConn)
+	req := buildExportRequest("svc-X", []logEntry{
+		{logsv1.SeverityNumber_SEVERITY_NUMBER_INFO, "ignored info"},
+		{logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR, "boom 1"},
+		{logsv1.SeverityNumber_SEVERITY_NUMBER_ERROR, "boom 2"},
+		{logsv1.SeverityNumber_SEVERITY_NUMBER_FATAL, "ded"},
+	})
+	if _, err := logsClient.Export(context.Background(), req); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	var received []*notifypb.ErrorEvent
+	for i := 0; i < 3; i++ {
+		ev, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("Recv #%d: %v", i, err)
+		}
+		received = append(received, ev)
+	}
+
+	cancel()
+	<-errCh
+
+	if got, want := len(received), 3; got != want {
+		t.Fatalf("got %d notifications, want %d", got, want)
+	}
+	wantBodies := []string{"boom 1", "boom 2", "ded"}
+	for i, ev := range received {
+		if ev.GetServiceName() != "svc-X" {
+			t.Errorf("ev[%d].ServiceName = %q, want svc-X", i, ev.GetServiceName())
+		}
+		if ev.GetBody() != wantBodies[i] {
+			t.Errorf("ev[%d].Body = %q, want %q", i, ev.GetBody(), wantBodies[i])
+		}
+	}
+}
+
+func waitForUnixSocket(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("unix socket %s never appeared", path)
 }
 
 // ─── HTTP integration test ──────────────────────────────────────────────────

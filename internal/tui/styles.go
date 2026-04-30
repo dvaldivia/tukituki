@@ -70,6 +70,18 @@ var (
 	normalItemStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#B0BEC5"))
 
+	// otelAlertStyle is the "on" half of the unread-otel-errors blink: a
+	// bold red row that stands out against the rest of the list.
+	otelAlertStyle = lipgloss.NewStyle().
+			Foreground(colorRed).
+			Bold(true)
+
+	// otelAlertOffStyle is the "off" half of the blink: a dim version of
+	// the row so toggling between this and otelAlertStyle produces the
+	// pulse effect without flickering the row out of existence.
+	otelAlertOffStyle = lipgloss.NewStyle().
+				Foreground(colorDim)
+
 	// statusMsgStyle styles the transient status message shown in the header.
 	statusMsgStyle = lipgloss.NewStyle().
 			Foreground(colorDim).

@@ -1057,6 +1057,7 @@ func newOtelCollectorCmd() *cobra.Command {
 	var protocol string
 	var severity string
 	var port int
+	var notifySocket string
 
 	cmd := &cobra.Command{
 		Use:    "otel-collector",
@@ -1073,9 +1074,10 @@ func newOtelCollectorCmd() *cobra.Command {
 			defer cancel()
 
 			c := &otelPkg.Collector{
-				Port:        port,
-				Protocol:    protocol,
-				MinSeverity: minSev,
+				Port:         port,
+				Protocol:     protocol,
+				MinSeverity:  minSev,
+				NotifySocket: notifySocket,
 			}
 			return c.Run(ctx)
 		},
@@ -1084,6 +1086,8 @@ func newOtelCollectorCmd() *cobra.Command {
 	cmd.Flags().StringVar(&protocol, "protocol", "grpc", "receiver protocol: grpc or http")
 	cmd.Flags().StringVar(&severity, "severity", "error", "minimum log severity to emit")
 	cmd.Flags().IntVar(&port, "port", 4317, "port to listen on")
+	cmd.Flags().StringVar(&notifySocket, "notify-socket", "",
+		"unix socket path on which to publish error notifications to the parent TUI (empty = disabled)")
 
 	return cmd
 }

@@ -29,11 +29,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dvaldivia/tukituki/internal/config"
+	notifypb "github.com/dvaldivia/tukituki/internal/otel/notify"
 	"github.com/dvaldivia/tukituki/internal/state"
 	"github.com/fsnotify/fsnotify"
 )
 
 const tuiRingBufferSize = 10000
+
+// otelTargetName mirrors process.OtelTargetName — the fixed name of the
+// virtual otel-errors row. Hardcoded here to keep the TUI package free of a
+// dependency on internal/process.
+const otelTargetName = "otel-errors"
+
+// otelBlinkInterval is how fast the unread-otel-errors row pulses on/off.
+const otelBlinkInterval = 500 * time.Millisecond
 
 // logBuffer holds the accumulated log lines for a single target.
 // It acts as a ring buffer, dropping the oldest lines when the limit is reached.
@@ -90,6 +99,15 @@ type targetsReloadedMsg struct {
 // editorFinishedMsg is sent when the external editor exits.
 type editorFinishedMsg struct{ err error }
 
+// otelErrorMsg carries a single error event pushed by the otel-collector
+// over the notify socket. Triggers the unread-count + blink behaviour on
+// the otel-errors row.
+type otelErrorMsg struct{ ev *notifypb.ErrorEvent }
+
+// otelBlinkMsg toggles the otel-errors row's blink phase. Re-armed only
+// while there is at least one unread error.
+type otelBlinkMsg struct{}
+
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 // waitForLogLine blocks on the channel and returns a logLineMsg when a line
@@ -143,6 +161,26 @@ func waitForFileChange(watcher *fsnotify.Watcher) tea.Cmd {
 			}
 		}
 	}
+}
+
+// waitForOtelEvent blocks on the events channel and returns an otelErrorMsg
+// when the collector pushes one. It is re-queued after every receipt so we
+// keep listening for the rest of the session.
+func waitForOtelEvent(ch <-chan *notifypb.ErrorEvent) tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return otelErrorMsg{ev: ev}
+	}
+}
+
+// otelBlinkTick fires after otelBlinkInterval and produces an otelBlinkMsg.
+func otelBlinkTick() tea.Cmd {
+	return tea.Tick(otelBlinkInterval, func(time.Time) tea.Msg {
+		return otelBlinkMsg{}
+	})
 }
 
 // reloadTargets re-parses run files from disk and returns the result.
@@ -214,6 +252,23 @@ type Model struct {
 
 	// fsWatcher watches the run directory for file changes.
 	fsWatcher *fsnotify.Watcher
+
+	// otelEvents receives ErrorEvent pushes from the otel-collector over the
+	// notify socket. Nil when no socket path was configured.
+	otelEvents <-chan *notifypb.ErrorEvent
+
+	// unreadOtelErrors is the count of error events that have arrived since
+	// the user last had the otel-errors row selected. Reset to 0 when the
+	// user selects the row.
+	unreadOtelErrors int
+
+	// otelBlinkOn toggles each blink tick while unreadOtelErrors > 0; used
+	// by renderLeft to alternate the row's foreground colour.
+	otelBlinkOn bool
+
+	// otelBlinking is true while a blink-tick chain is in flight; prevents
+	// stacking multiple ticker chains when more events arrive.
+	otelBlinking bool
 }
 
 // NewModel constructs a Model ready for use with bubbletea.
@@ -244,6 +299,16 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface, runDir, proj
 		}
 	}
 
+	// Subscribe to error notifications from the otel-collector. The dialer
+	// retries forever so we are tolerant of the collector starting after
+	// the TUI (e.g. detach/reattach scenarios).
+	var otelEvents <-chan *notifypb.ErrorEvent
+	if socket := manager.OtelNotifySocket(); socket != "" && hasOtelTarget(targets) {
+		ch := make(chan *notifypb.ErrorEvent, 256)
+		go runOtelNotifySubscriber(ctx, socket, ch)
+		otelEvents = ch
+	}
+
 	return Model{
 		targets:      targets,
 		manager:      manager,
@@ -260,7 +325,19 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface, runDir, proj
 		runDir:       runDir,
 		projectRoot:  projectRoot,
 		fsWatcher:    watcher,
+		otelEvents:   otelEvents,
 	}
+}
+
+// hasOtelTarget reports whether the target list includes the virtual
+// otel-errors row — the only target whose notifications we surface.
+func hasOtelTarget(targets []config.RunTarget) bool {
+	for _, t := range targets {
+		if t.Name == otelTargetName {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
@@ -273,6 +350,11 @@ func (m Model) Init() tea.Cmd {
 	// Start watching the run directory for config file changes.
 	if m.fsWatcher != nil {
 		cmds = append(cmds, waitForFileChange(m.fsWatcher))
+	}
+
+	// Start consuming otel-collector error notifications.
+	if m.otelEvents != nil {
+		cmds = append(cmds, waitForOtelEvent(m.otelEvents))
 	}
 
 	// Start watching logs for each target and seed the buffer from existing lines.
@@ -386,18 +468,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selected > 0 {
 					m.selected--
 					m.loadSelectedLogs()
+					m.markOtelSeenIfSelected()
 				}
 
 			case matchKey(msg, m.keys.Down):
 				if m.selected < len(m.targets)-1 {
 					m.selected++
 					m.loadSelectedLogs()
+					m.markOtelSeenIfSelected()
 				}
 
 			case matchKey(msg, m.keys.Tab):
 				if len(m.targets) > 0 {
 					m.selected = (m.selected + 1) % len(m.targets)
 					m.loadSelectedLogs()
+					m.markOtelSeenIfSelected()
 				}
 
 			case matchKey(msg, m.keys.Restart):
@@ -618,6 +703,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, waitForFileChange(m.fsWatcher))
 		}
 
+	// ── OTel error event arrived ────────────────────────────────────────────
+	case otelErrorMsg:
+		if !m.isOtelSelected() {
+			m.unreadOtelErrors++
+			if !m.otelBlinking {
+				m.otelBlinking = true
+				m.otelBlinkOn = true
+				cmds = append(cmds, otelBlinkTick())
+			}
+		}
+		// Re-queue so we keep receiving from the channel.
+		if m.otelEvents != nil {
+			cmds = append(cmds, waitForOtelEvent(m.otelEvents))
+		}
+
+	// ── Blink tick ──────────────────────────────────────────────────────────
+	case otelBlinkMsg:
+		if m.unreadOtelErrors > 0 && !m.isOtelSelected() {
+			m.otelBlinkOn = !m.otelBlinkOn
+			cmds = append(cmds, otelBlinkTick())
+		} else {
+			m.otelBlinking = false
+			m.otelBlinkOn = false
+		}
+
 	// ── Targets reloaded from disk ──────────────────────────────────────────
 	case targetsReloadedMsg:
 		if msg.err != nil {
@@ -765,6 +875,9 @@ func (m Model) renderLeft() string {
 		}
 		iconStr := statusIconChar(m.statuses[t.Name]) // raw char, no ANSI
 		label := t.Name
+		if t.Name == otelTargetName && m.unreadOtelErrors > 0 {
+			label = fmt.Sprintf("%s (%d)", label, m.unreadOtelErrors)
+		}
 		// Reserve: cursor(2) + icon(1) + space(1) = 4 chars of prefix.
 		maxLabel := innerWidth - 4
 		if maxLabel < 1 {
@@ -773,10 +886,18 @@ func (m Model) renderLeft() string {
 		if len(label) > maxLabel {
 			label = label[:maxLabel]
 		}
-		if i == m.selected {
+		switch {
+		case i == m.selected:
 			raw := fitLine("▶ " + iconStr + " " + label)
 			rows = append(rows, selectedItemStyle.Render(raw))
-		} else {
+		case t.Name == otelTargetName && m.unreadOtelErrors > 0:
+			raw := fitLine("  " + iconStr + " " + label)
+			style := otelAlertStyle
+			if !m.otelBlinkOn {
+				style = otelAlertOffStyle
+			}
+			rows = append(rows, style.Render(raw))
+		default:
 			raw := fitLine("  " + iconStr + " " + label)
 			rows = append(rows, normalItemStyle.Render(raw))
 		}
@@ -1113,6 +1234,25 @@ func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
 	}
 
 	return cmds
+}
+
+// isOtelSelected reports whether the currently selected target is the
+// virtual otel-errors row.
+func (m *Model) isOtelSelected() bool {
+	if len(m.targets) == 0 {
+		return false
+	}
+	return m.targets[m.selected].Name == otelTargetName
+}
+
+// markOtelSeenIfSelected zeros the unread count and stops the blink when
+// the user has navigated onto the otel-errors row. Safe to call from any
+// selection-changing key handler.
+func (m *Model) markOtelSeenIfSelected() {
+	if m.isOtelSelected() {
+		m.unreadOtelErrors = 0
+		m.otelBlinkOn = false
+	}
 }
 
 // ─── Status icons ─────────────────────────────────────────────────────────────
