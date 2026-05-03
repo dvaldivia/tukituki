@@ -66,8 +66,8 @@ HEADLESS / SCRIPTED MODE (safe for automation and AI agents):
     tukituki status            - show runtime status of all targets
     tukituki start [name]      - start one or all targets
     tukituki stop  [name]      - stop  one or all targets
-    tukituki restart <name>    - restart a target
-    tukituki logs <name>       - tail logs (use --no-follow for one-shot read)
+    tukituki restart [name]    - restart one or all targets
+    tukituki logs <name>       - print recent logs (use --follow/-f to stream)
 
   Add --json to any subcommand for machine-readable JSON output.
 
@@ -338,7 +338,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		exitError(
 			"no terminal detected — the default command opens an interactive TUI and requires a TTY",
 			map[string]any{
-				"hint": "use a subcommand for non-interactive use: list, status, start, stop, restart, logs --no-follow",
+				"hint": "use a subcommand for non-interactive use: list, status, start, stop, restart, logs",
 			},
 		)
 	}
@@ -785,17 +785,18 @@ Use --json for machine-readable output.`,
 
 func newRestartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "restart <target-name> [target-name ...]",
-		Short: "Restart one or more targets",
+		Use:   "restart [target-name ...]",
+		Short: "Restart one or all targets",
 		Long: `Stop and then start each named target, in order.
 
+If no target names are given, all configured targets are restarted.
 If a process is not currently running, it is simply started.
 All names are validated up front; if any is unknown the command exits
 before restarting anything. Use --json for machine-readable output.`,
-		Example: `  tukituki restart api
+		Example: `  tukituki restart
+  tukituki restart api
   tukituki restart api worker
   tukituki restart api --json`,
-		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
 			stateDirPath := resolveStateDir()
@@ -808,14 +809,22 @@ before restarting anything. Use --json for machine-readable output.`,
 				fmt.Fprintf(os.Stderr, "Warning: could not attach to existing processes: %v\n", err)
 			}
 
+			names := args
+			if len(names) == 0 {
+				names = make([]string, len(targets))
+				for i, t := range targets {
+					names[i] = t.Name
+				}
+			}
+
 			// Validate every name before restarting anything so a typo in
 			// the last arg doesn't leave earlier targets bounced.
-			for _, name := range args {
+			for _, name := range names {
 				_ = findTarget(targets, name)
 			}
 
 			ctx := context.Background()
-			for _, name := range args {
+			for _, name := range names {
 				if err := mgr.Restart(ctx, name); err != nil {
 					return fmt.Errorf("restart %q: %w", name, err)
 				}
@@ -823,16 +832,16 @@ before restarting anything. Use --json for machine-readable output.`,
 
 			statuses := mgr.GetAllStatuses()
 			if jsonOutput {
-				results := make([]actionResult, len(args))
-				for i, name := range args {
+				results := make([]actionResult, len(names))
+				for i, name := range names {
 					results[i] = actionResult{Name: name, Status: string(statuses[name])}
 				}
-				if len(results) == 1 {
+				if len(results) == 1 && len(args) == 1 {
 					return writeJSON(results[0])
 				}
 				return writeJSON(results)
 			}
-			for _, name := range args {
+			for _, name := range names {
 				fmt.Printf("Restarted: %s (status: %s)\n", name, statuses[name])
 			}
 			return nil
@@ -946,20 +955,20 @@ func newDebugCmd() *cobra.Command {
 // -------------------------------------------------------------------------
 
 func newLogsCmd() *cobra.Command {
-	var noFollow bool
+	var follow bool
 	var tail int
 
 	cmd := &cobra.Command{
 		Use:   "logs <target-name>",
-		Short: "Tail logs for a target",
+		Short: "Print recent logs for a target",
 		Long: `Print recent log lines for a target and optionally follow new output.
 
-By default prints the last 100 lines and then streams new lines until Ctrl+C.
-Use --no-follow to print buffered lines and exit immediately (safe for scripts
-and AI agents).  Use --tail to control how many buffered lines are shown.`,
+By default prints the last 100 buffered lines and exits (safe for scripts and
+AI agents).  Use --follow/-f to stream new lines until Ctrl+C.  Use --tail to
+control how many buffered lines are shown.`,
 		Example: `  tukituki logs api
-  tukituki logs api --no-follow
-  tukituki logs api --tail 50 --no-follow`,
+  tukituki logs api --follow
+  tukituki logs api --tail 50 -f`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runDirPath := resolveRunDir()
@@ -976,7 +985,7 @@ and AI agents).  Use --tail to control how many buffered lines are shown.`,
 			name := args[0]
 			_ = findTarget(targets, name)
 
-			if noFollow {
+			if !follow {
 				// Read the log file directly from disk — the async
 				// tailer may not have populated the ring buffer yet.
 				states := mgr.GetAllProcessStates()
@@ -1041,8 +1050,8 @@ and AI agents).  Use --tail to control how many buffered lines are shown.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&noFollow, "no-follow", false,
-		"print buffered log lines and exit without streaming (safe for scripts and agents)")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false,
+		"stream new log lines until Ctrl+C instead of exiting after the buffered lines")
 	cmd.Flags().IntVar(&tail, "tail", 100,
 		"number of buffered log lines to print (0 = all)")
 

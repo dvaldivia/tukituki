@@ -77,8 +77,8 @@ The `service-name` comes from the `service.name` resource attribute in the OTLP 
 The virtual **otel-errors** target works with all headless subcommands:
 
 ```sh
-tukituki logs otel-errors                  # follow errors in real time
-tukituki logs otel-errors --no-follow      # print buffered errors and exit
+tukituki logs otel-errors                  # print buffered errors and exit
+tukituki logs otel-errors --follow         # stream errors in real time
 tukituki status otel-errors                # check collector status
 tukituki stop otel-errors                  # stop the collector
 ```
@@ -99,7 +99,7 @@ otel_port: 4317
 - Confirm your app is exporting OTel **logs** (not just traces or metrics).
 - Check the severity threshold -- your logs may be below the filter.
 - Verify the collector is running: `tukituki status otel-errors`.
-- Check the collector's own log output: `tukituki logs otel-errors --no-follow`.
+- Check the collector's own log output: `tukituki logs otel-errors`.
 
 **Port already in use?**
 - Another OTel collector or service may be using port 4317. Override with `--otel-port`.

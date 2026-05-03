@@ -64,9 +64,9 @@ tukituki start api            # Start a single target
 tukituki stop                 # Stop all processes
 tukituki stop api             # Stop a single target
 tukituki restart api          # Restart a target
-tukituki logs api             # Tail logs (last 100 lines, then follow)
-tukituki logs api --no-follow # Print buffered logs and exit (safe for scripts)
-tukituki logs api --tail 50   # Print last 50 lines, then follow
+tukituki logs api             # Print last 100 buffered lines and exit
+tukituki logs api --follow    # Print buffered lines, then follow new output
+tukituki logs api --tail 50   # Print last 50 lines and exit
 ```
 
 ### Machine-readable output
@@ -248,7 +248,7 @@ tukituki --otel-port 14317         # custom gRPC port
 The OTel collector works with all headless subcommands:
 
 ```sh
-tukituki logs otel-errors --no-follow   # read collected errors
+tukituki logs otel-errors               # read collected errors
 tukituki status otel-errors             # check collector status
 ```
 
@@ -292,7 +292,7 @@ state_dir: .cache/tukituki
 
 tukituki's headless subcommands are designed to be safe and predictable for automated use:
 
-- **Never blocks**: subcommands exit cleanly. Use `logs --no-follow` instead of `logs` (which follows forever).
+- **Never blocks**: subcommands exit cleanly. `logs` prints buffered lines and exits by default; pass `--follow`/`-f` only when you want to stream.
 - **Structured output**: `--json` on any subcommand gives parseable JSON; errors go to stderr as JSON too.
 - **Self-describing**: `--help` on any command lists all flags and examples. `version --json` lets agents confirm tool identity and version at startup.
 - **No interactive prompts**: all operations are fully flag-driven.
@@ -305,6 +305,6 @@ tukituki version --json          # confirm tool is present and get version
 tukituki list --json             # discover available targets
 tukituki start --json            # start all targets
 tukituki status --json           # poll for running/stopped/failed
-tukituki logs api --no-follow    # read recent output without blocking
+tukituki logs api                # read recent output without blocking
 tukituki stop --json             # stop everything when done
 ```
