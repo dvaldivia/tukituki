@@ -190,7 +190,7 @@ func reloadTargets(runDir, projectRoot string) tea.Cmd {
 		if err != nil {
 			return targetsReloadedMsg{err: err}
 		}
-		dotenv, _ := config.ParseDotEnv(filepath.Join(projectRoot, ".env"))
+		dotenv, _ := config.LoadDotEnv(projectRoot)
 		targets = config.ExpandEnv(targets, dotenv)
 		return targetsReloadedMsg{targets: targets}
 	}
@@ -489,6 +489,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.targets) > 0 {
 					name := m.targets[m.selected].Name
 					cmds = append(cmds, m.doRestart(name))
+				}
+
+			case matchKey(msg, m.keys.RestartAll):
+				if len(m.targets) > 0 {
+					statuses := m.manager.GetAllStatuses()
+					for _, t := range m.targets {
+						wasRunning := statuses[t.Name] == state.StatusRunning
+						cmds = append(cmds, m.doRestartAndClear(t.Name, wasRunning))
+					}
+					n := len(m.targets)
+					cmds = append(cmds, func() tea.Msg {
+						return actionResultMsg{msg: fmt.Sprintf("Restarted all (%d targets)", n)}
+					})
 				}
 
 			case matchKey(msg, m.keys.Stop):
@@ -1037,6 +1050,7 @@ func (m Model) renderHelp() string {
 			"Process control",
 			[]entry{
 				{"r", "restart selected"},
+				{"R", "restart all (clears logs)"},
 				{"s", "stop selected"},
 				{"S", "start selected"},
 				{"E", "edit run file"},
@@ -1466,6 +1480,28 @@ func (m Model) doRestart(name string) tea.Cmd {
 			return actionResultMsg{msg: fmt.Sprintf("restart %s: %s", name, err)}
 		}
 		return actionResultMsg{msg: fmt.Sprintf("Restarted %s", name)}
+	}
+}
+
+// doRestartAndClear stops the target (if running), wipes its log buffer, and
+// starts it again. Stopping before clearing avoids racing with the dying
+// process — once the new process starts, the only lines in the buffer are
+// fresh ones. Returns clearLogMsg so the TUI flushes its in-memory buffer.
+func (m Model) doRestartAndClear(name string, wasRunning bool) tea.Cmd {
+	mgr := m.manager
+	return func() tea.Msg {
+		if wasRunning {
+			if err := mgr.Stop(name); err != nil {
+				return actionResultMsg{msg: fmt.Sprintf("stop %s: %s", name, err)}
+			}
+		}
+		if err := mgr.ClearLog(name); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("clear %s: %s", name, err)}
+		}
+		if err := mgr.Start(context.Background(), name); err != nil {
+			return actionResultMsg{msg: fmt.Sprintf("start %s: %s", name, err)}
+		}
+		return clearLogMsg{target: name}
 	}
 }
 

@@ -248,6 +248,60 @@ func TestExpandEnv_SubstitutesCleanup(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// LoadDotEnv
+// ---------------------------------------------------------------------------
+
+func TestLoadDotEnv_SetsUnsetVars(t *testing.T) {
+	path := writeDotEnv(t, "TUKITUKI_TEST_NEW_KEY=fromdotenv\n")
+	root := filepath.Dir(path)
+	key := "TUKITUKI_TEST_NEW_KEY"
+
+	os.Unsetenv(key)
+	t.Cleanup(func() { os.Unsetenv(key) })
+
+	vars, err := LoadDotEnv(root)
+	if err != nil {
+		t.Fatalf("LoadDotEnv: %v", err)
+	}
+	assertEnv(t, vars, key, "fromdotenv")
+
+	if got := os.Getenv(key); got != "fromdotenv" {
+		t.Errorf("os.Getenv(%q) = %q, want %q", key, got, "fromdotenv")
+	}
+}
+
+func TestLoadDotEnv_DoesNotOverrideExistingVars(t *testing.T) {
+	path := writeDotEnv(t, "TUKITUKI_TEST_EXISTING=fromdotenv\n")
+	root := filepath.Dir(path)
+	key := "TUKITUKI_TEST_EXISTING"
+
+	t.Setenv(key, "fromshell")
+
+	vars, err := LoadDotEnv(root)
+	if err != nil {
+		t.Fatalf("LoadDotEnv: %v", err)
+	}
+	// Returned map still reflects what was in .env (used for ${VAR} expansion).
+	assertEnv(t, vars, key, "fromdotenv")
+
+	// But the process env keeps the pre-existing value (shell wins).
+	if got := os.Getenv(key); got != "fromshell" {
+		t.Errorf("os.Getenv(%q) = %q, want %q (shell value should win)", key, got, "fromshell")
+	}
+}
+
+func TestLoadDotEnv_MissingFile(t *testing.T) {
+	root := t.TempDir() // no .env in here
+	vars, err := LoadDotEnv(root)
+	if err != nil {
+		t.Fatalf("LoadDotEnv: %v", err)
+	}
+	if vars != nil {
+		t.Errorf("LoadDotEnv on missing .env returned %v, want nil", vars)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 

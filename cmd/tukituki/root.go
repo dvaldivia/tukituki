@@ -249,7 +249,7 @@ func loadTargetsOrDie(runDirPath, projectRoot string) []config.RunTarget {
 			exitError(fmt.Sprintf("loading targets: %v", err), nil)
 		}
 	}
-	dotenv, err := config.ParseDotEnv(filepath.Join(projectRoot, ".env"))
+	dotenv, err := config.LoadDotEnv(projectRoot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not parse .env: %v\n", err)
 	}

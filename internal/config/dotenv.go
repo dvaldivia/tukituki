@@ -17,8 +17,33 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
+
+// LoadDotEnv reads `.env` from projectRoot and merges its keys into the
+// running process's environment, then returns the parsed map for use by
+// ExpandEnv. Keys already set in the process environment are left alone —
+// shell exports always win over `.env`, matching godotenv.Load semantics.
+//
+// Because the process manager spawns children with cmd.Env = os.Environ(),
+// seeding the parent process's env this way makes every `.env` key visible
+// to every spawned target without requiring per-yaml `${VAR}` mappings.
+// Yaml `env:` entries are still appended on top, so target-specific
+// overrides continue to take precedence.
+func LoadDotEnv(projectRoot string) (map[string]string, error) {
+	vars, err := ParseDotEnv(filepath.Join(projectRoot, ".env"))
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range vars {
+		if _, ok := os.LookupEnv(k); ok {
+			continue
+		}
+		_ = os.Setenv(k, v)
+	}
+	return vars, nil
+}
 
 // ParseDotEnv parses a .env file and returns a map of key→value pairs.
 // Blank lines and lines starting with # are ignored.

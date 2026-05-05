@@ -22,10 +22,13 @@ Both arrow keys and vim-style `j`/`k` move the process selection. Use `Tab` to s
 | Key | Action |
 |-----|--------|
 | `r` | Restart the selected process. |
+| `R` | Restart every process. Logs of running targets are cleared first so only fresh output appears after the restart. |
 | `s` | Stop the selected process. |
 | `S` | Start the selected process (when stopped or failed). |
 
 `r` is equivalent to `s` followed by `S` — it stops the running process and immediately starts it again. Use `S` (uppercase) to start a process that was previously stopped with `s` or that exited with a failure (`!`).
+
+`R` (uppercase) is the bulk version of `r`: it stops every running target, wipes its log buffer, then starts every target back up. Stopped or failed targets are also (re)started, so `R` is a quick way to bring the whole project back to a clean baseline.
 
 ## Log Management
 

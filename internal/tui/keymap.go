@@ -21,8 +21,9 @@ type keyMap struct {
 	Up      key.Binding
 	Down    key.Binding
 	Tab     key.Binding
-	Restart key.Binding
-	Stop    key.Binding
+	Restart    key.Binding
+	RestartAll key.Binding
+	Stop       key.Binding
 	Start   key.Binding
 	Dump    key.Binding
 	Clear   key.Binding
@@ -77,6 +78,10 @@ func defaultKeyMap() keyMap {
 		Restart: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "restart"),
+		),
+		RestartAll: key.NewBinding(
+			key.WithKeys("R"),
+			key.WithHelp("R", "restart all (clears logs)"),
 		),
 		Stop: key.NewBinding(
 			key.WithKeys("s"),
