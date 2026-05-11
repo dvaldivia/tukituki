@@ -40,6 +40,13 @@ The left panel lists every process defined in your `.run/*.yaml` files. Each row
 - The **process name** as defined in the run target file.
 - A `▶` marker on the currently selected row.
 
+When run targets are organised into [folder groups]({{< relref "/docs/configuration/run-targets#grouping-targets-into-folders" >}}) (subdirectories of `.run/`), each group is shown as a collapsible folder row:
+
+- `▶ kb (3)` — collapsed: the arrow points right, children are hidden.
+- `▼ kb (3)` — expanded: the arrow points down, children are listed indented underneath.
+
+Folders are **collapsed by default**, keeping the panel compact regardless of how many targets a group contains. The `(3)` counter on the folder row always reflects the total number of targets in the group, expanded or not.
+
 Below the process list, a horizontal rule separates the list from the **key hint area**, which displays the most commonly used keybindings as a quick reference without leaving the screen.
 
 ### Status Icons
@@ -75,7 +82,10 @@ The log viewport **auto-scrolls to the bottom** whenever new output arrives — 
 |-----|--------|
 | `↑` / `k` | Move selection up in the process list. |
 | `↓` / `j` | Move selection down in the process list. |
-| `Tab` | Cycle to the next process (wraps around). |
+| `Tab` | Cycle to the next row (wraps around). |
+| `→` / `l` | Expand the selected folder. |
+| `←` / `h` | Collapse the selected folder (or jump up to its header if a child is selected). |
+| `Enter` / `Space` | Toggle the selected folder. |
 | `PgUp` / `b` | Scroll the log viewport up one page. |
 | `PgDn` / `f` | Scroll the log viewport down one page. |
 

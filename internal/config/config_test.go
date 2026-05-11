@@ -137,6 +137,77 @@ command: echo
 	}
 }
 
+func TestLoadTargets_Subdirectories(t *testing.T) {
+	dir := t.TempDir()
+
+	// Top-level target.
+	writeYAML(t, filepath.Join(dir, "api.yaml"), `
+name: api
+command: echo
+`)
+
+	// Two targets inside a "kb" subdirectory.
+	subdir := filepath.Join(dir, "kb")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir kb: %v", err)
+	}
+	writeYAML(t, filepath.Join(subdir, "sentinel.yaml"), `
+name: kb-sentinel
+command: echo
+`)
+	writeYAML(t, filepath.Join(subdir, "acme.yaml"), `
+name: kb-acme
+command: echo
+`)
+
+	targets, err := LoadTargets(dir)
+	if err != nil {
+		t.Fatalf("LoadTargets: %v", err)
+	}
+	if len(targets) != 3 {
+		t.Fatalf("expected 3 targets, got %d", len(targets))
+	}
+
+	groups := map[string]string{}
+	for _, tt := range targets {
+		groups[tt.Name] = tt.Group
+	}
+	if groups["api"] != "" {
+		t.Errorf("expected api.Group=\"\", got %q", groups["api"])
+	}
+	if groups["kb-sentinel"] != "kb" {
+		t.Errorf("expected kb-sentinel.Group=\"kb\", got %q", groups["kb-sentinel"])
+	}
+	if groups["kb-acme"] != "kb" {
+		t.Errorf("expected kb-acme.Group=\"kb\", got %q", groups["kb-acme"])
+	}
+}
+
+func TestLoadTargets_IgnoresDotDirs(t *testing.T) {
+	dir := t.TempDir()
+
+	hidden := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(hidden, 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	writeYAML(t, filepath.Join(hidden, "config.yaml"), `
+name: should-be-ignored
+command: echo
+`)
+	writeYAML(t, filepath.Join(dir, "real.yaml"), `
+name: real
+command: echo
+`)
+
+	targets, err := LoadTargets(dir)
+	if err != nil {
+		t.Fatalf("LoadTargets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].Name != "real" {
+		t.Fatalf("expected only 'real', got %+v", targets)
+	}
+}
+
 func TestHasOtelTarget(t *testing.T) {
 	none := []RunTarget{{Name: "a"}, {Name: "b"}}
 	if HasOtelTarget(none) {

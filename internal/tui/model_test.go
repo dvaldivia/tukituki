@@ -290,6 +290,77 @@ func TestModel_View_DoesNotPanic(t *testing.T) {
 	_ = m.View()
 }
 
+func TestModel_FolderGrouping_CollapsedByDefault(t *testing.T) {
+	targets := []config.RunTarget{
+		{Name: "api", Command: "true"},
+		{Name: "kb-acme", Command: "true", Group: "kb"},
+		{Name: "kb-sentinel", Command: "true", Group: "kb"},
+	}
+	mgr := newMockManager([]string{"api", "kb-acme", "kb-sentinel"})
+	m := NewModel(targets, mgr, "", "")
+
+	// Expected rows when collapsed: api, folder-kb. (2 rows; kb children hidden.)
+	if len(m.rows) != 2 {
+		t.Fatalf("expected 2 rows (1 target + 1 folder), got %d: %+v", len(m.rows), m.rows)
+	}
+	if m.rows[0].kind != rowTarget || m.targets[m.rows[0].target].Name != "api" {
+		t.Errorf("row 0: expected target 'api', got %+v", m.rows[0])
+	}
+	if m.rows[1].kind != rowFolder || m.rows[1].group != "kb" {
+		t.Errorf("row 1: expected folder 'kb', got %+v", m.rows[1])
+	}
+}
+
+func TestModel_FolderGrouping_ExpandReveasChildren(t *testing.T) {
+	targets := []config.RunTarget{
+		{Name: "kb-acme", Command: "true", Group: "kb"},
+		{Name: "kb-sentinel", Command: "true", Group: "kb"},
+	}
+	mgr := newMockManager([]string{"kb-acme", "kb-sentinel"})
+	m := NewModel(targets, mgr, "", "")
+
+	// Initially: just the folder header.
+	if len(m.rows) != 1 || m.rows[0].kind != rowFolder {
+		t.Fatalf("expected single folder row before expand, got %+v", m.rows)
+	}
+	// Selection is the folder.
+	m.selected = 0
+	// Press right to expand.
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated := newModel.(Model)
+	if len(updated.rows) != 3 {
+		t.Fatalf("expected 3 rows after expand (folder + 2 children), got %d: %+v", len(updated.rows), updated.rows)
+	}
+	if !updated.folderExpanded["kb"] {
+		t.Error("expected folderExpanded[kb]=true after right key")
+	}
+	// Press left to collapse.
+	newModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	updated = newModel.(Model)
+	if len(updated.rows) != 1 {
+		t.Fatalf("expected 1 row after collapse, got %d: %+v", len(updated.rows), updated.rows)
+	}
+	if updated.folderExpanded["kb"] {
+		t.Error("expected folderExpanded[kb]=false after left key")
+	}
+}
+
+func TestModel_FolderGrouping_TargetActionsSkipFolder(t *testing.T) {
+	targets := []config.RunTarget{
+		{Name: "kb-acme", Command: "true", Group: "kb"},
+	}
+	mgr := newMockManager([]string{"kb-acme"})
+	m := NewModel(targets, mgr, "", "")
+
+	// Folder is selected at row 0; selectedTargetName must be empty.
+	if name := m.selectedTargetName(); name != "" {
+		t.Errorf("expected empty target name on folder row, got %q", name)
+	}
+	if g := m.selectedFolder(); g != "kb" {
+		t.Errorf("expected selectedFolder=kb, got %q", g)
+	}
+}
+
 func TestStatusIcon(t *testing.T) {
 	cases := []struct {
 		status state.Status

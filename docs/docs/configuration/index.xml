@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tukituki – Configuration</title>
-    <link>http://localhost:1313/tukituki/docs/configuration/</link>
+    <link>https://dvaldivia.github.io/tukituki/docs/configuration/</link>
     <description>Recent content in Configuration on tukituki</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     
-	  <atom:link href="http://localhost:1313/tukituki/docs/configuration/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/configuration/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Run Target Reference</title>
-      <link>http://localhost:1313/tukituki/docs/configuration/run-targets/</link>
+      <link>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>http://localhost:1313/tukituki/docs/configuration/run-targets/</guid>
+      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</guid>
       <description>
         
         
@@ -30,7 +30,46 @@
   &lt;div class=&#34;hx:ltr:pl-3 hx:ltr:pr-2 hx:rtl:pr-3 hx:rtl:pl-2&#34;&gt;&lt;svg height=1.2em class=&#34;hx:inline-block hx:align-middle&#34; xmlns=&#34;http://www.w3.org/2000/svg&#34; fill=&#34;none&#34; viewBox=&#34;0 0 24 24&#34; stroke-width=&#34;2&#34; stroke=&#34;currentColor&#34; aria-hidden=&#34;true&#34;&gt;&lt;path stroke-linecap=&#34;round&#34; stroke-linejoin=&#34;round&#34; d=&#34;M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z&#34;/&gt;&lt;/svg&gt;&lt;/div&gt;
 
   &lt;div class=&#34;hx:w-full hx:min-w-0 hx:leading-7&#34;&gt;
-    &lt;div class=&#34;hx:mt-6 hx:leading-7 hx:first:mt-0&#34;&gt;&lt;code&gt;name&lt;/code&gt; must be unique across &lt;strong&gt;all&lt;/strong&gt; YAML files in the run directory. Duplicate names will cause a startup error.&lt;/div&gt;
+    &lt;div class=&#34;hx:mt-6 hx:leading-7 hx:first:mt-0&#34;&gt;&lt;code&gt;name&lt;/code&gt; must be unique across &lt;strong&gt;all&lt;/strong&gt; YAML files in the run directory, including those nested under group subdirectories. Duplicate names will cause a startup error.&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;h2&gt;Grouping Targets Into Folders&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;grouping-targets-into-folders&#34;&gt;&lt;/span&gt;
+    &lt;a href=&#34;#grouping-targets-into-folders&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;When the number of run targets grows, you can keep the TUI tidy by moving related targets into a subdirectory of the run directory. Every YAML file inside an immediate subdirectory becomes part of a &lt;strong&gt;group&lt;/strong&gt; named after that subdirectory:&lt;/p&gt;
+&lt;div class=&#34;hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code&#34;&gt;
+
+&lt;div&gt;&lt;pre&gt;&lt;code&gt;.run/
+├── api.yaml              # ungrouped — appears at the top of the list
+├── worker.yaml           # ungrouped
+└── kb/                   # group &amp;#34;kb&amp;#34;
+    ├── acme.yaml         # collapsed under the &amp;#34;kb&amp;#34; folder
+    ├── meshlink.yaml
+    └── sentinel.yaml&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;div class=&#34;hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0&#34;&gt;
+  &lt;button
+    class=&#34;hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50&#34;
+    title=&#34;Copy code&#34;
+    aria-label=&#34;Copy code&#34;
+    data-copied-label=&#34;Copied!&#34;
+  &gt;
+    &lt;div class=&#34;hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4&#34;&gt;&lt;/div&gt;
+&lt;div class=&#34;hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4&#34;&gt;&lt;/div&gt;
+  &lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Behaviour:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Targets inside a subdirectory are loaded and started exactly like top-level targets — grouping is purely a display concern.&lt;/li&gt;
+&lt;li&gt;In the TUI each group is rendered as a single folder row (&lt;code&gt;▶ kb (3)&lt;/code&gt;). The arrow points &lt;strong&gt;right&lt;/strong&gt; when collapsed and &lt;strong&gt;down&lt;/strong&gt; when expanded (&lt;code&gt;▼ kb (3)&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;Folders are &lt;strong&gt;collapsed by default&lt;/strong&gt;, so a project with many group members has the same visual footprint as one with a single row per group.&lt;/li&gt;
+&lt;li&gt;Expand or collapse a folder with &lt;code&gt;→&lt;/code&gt;/&lt;code&gt;l&lt;/code&gt; or &lt;code&gt;←&lt;/code&gt;/&lt;code&gt;h&lt;/code&gt; while it is selected, or press &lt;code&gt;Enter&lt;/code&gt;/&lt;code&gt;Space&lt;/code&gt; to toggle it. See the &lt;a href=&#34;https://dvaldivia.github.io/tukituki/docs/tui/keybindings/&#34;&gt;TUI keybindings reference&lt;/a&gt; for the full list.&lt;/li&gt;
+&lt;li&gt;Only one level of nesting is honoured. Files in &lt;code&gt;.run/foo/bar/*.yaml&lt;/code&gt; are ignored. Hidden subdirectories (those whose name starts with &lt;code&gt;.&lt;/code&gt;) are skipped.&lt;/li&gt;
+&lt;li&gt;The headless CLI (&lt;code&gt;tukituki list&lt;/code&gt;, &lt;code&gt;start&lt;/code&gt;, &lt;code&gt;stop&lt;/code&gt;, etc.) is unaffected — it operates on target &lt;strong&gt;names&lt;/strong&gt; and ignores group membership entirely.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class=&#34;hx:overflow-x-auto hx:mt-6 hx:flex hx:rounded-lg hx:border hx:py-2 hx:ltr:pr-4 hx:rtl:pl-4 hx:contrast-more:border-current hx:contrast-more:dark:border-current hx:border-blue-200 hx:bg-blue-100 hx:text-blue-900 hx:dark:border-blue-200/30 hx:dark:bg-blue-900/30 hx:dark:text-blue-200&#34;&gt;
+  &lt;div class=&#34;hx:ltr:pl-3 hx:ltr:pr-2 hx:rtl:pr-3 hx:rtl:pl-2&#34;&gt;&lt;svg height=1.2em class=&#34;hx:inline-block hx:align-middle&#34; xmlns=&#34;http://www.w3.org/2000/svg&#34; fill=&#34;none&#34; viewBox=&#34;0 0 24 24&#34; stroke-width=&#34;2&#34; stroke=&#34;currentColor&#34; aria-hidden=&#34;true&#34;&gt;&lt;path stroke-linecap=&#34;round&#34; stroke-linejoin=&#34;round&#34; d=&#34;M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z&#34;/&gt;&lt;/svg&gt;&lt;/div&gt;
+
+  &lt;div class=&#34;hx:w-full hx:min-w-0 hx:leading-7&#34;&gt;
+    &lt;div class=&#34;hx:mt-6 hx:leading-7 hx:first:mt-0&#34;&gt;The group name is derived from the subdirectory; it cannot be set in the YAML file. To move a target between groups, move (or rename) its YAML file.&lt;/div&gt;
   &lt;/div&gt;
 &lt;/div&gt;
 
@@ -100,7 +139,7 @@
           &lt;td&gt;bool&lt;/td&gt;
           &lt;td&gt;no&lt;/td&gt;
           &lt;td&gt;&lt;code&gt;false&lt;/code&gt;&lt;/td&gt;
-          &lt;td&gt;Enable OpenTelemetry log collection. When &lt;code&gt;true&lt;/code&gt;, tukituki injects &lt;code&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/code&gt; into the process and starts a bundled OTLP receiver. See the &lt;a href=&#34;http://localhost:1313/tukituki/docs/guides/opentelemetry/&#34;&gt;OpenTelemetry guide&lt;/a&gt;.&lt;/td&gt;
+          &lt;td&gt;Enable OpenTelemetry log collection. When &lt;code&gt;true&lt;/code&gt;, tukituki injects &lt;code&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/code&gt; into the process and starts a bundled OTLP receiver. See the &lt;a href=&#34;https://dvaldivia.github.io/tukituki/docs/guides/opentelemetry/&#34;&gt;OpenTelemetry guide&lt;/a&gt;.&lt;/td&gt;
       &lt;/tr&gt;
   &lt;/tbody&gt;
 &lt;/table&gt;
@@ -227,10 +266,10 @@
     
     <item>
       <title>Config File &amp; Flags</title>
-      <link>http://localhost:1313/tukituki/docs/configuration/config-file/</link>
+      <link>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>http://localhost:1313/tukituki/docs/configuration/config-file/</guid>
+      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</guid>
       <description>
         
         

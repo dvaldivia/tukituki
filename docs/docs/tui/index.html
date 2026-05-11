@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr"><head><script src="/tukituki/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=tukituki/livereload" data-no-instant defer></script>
+<html lang="en" dir="ltr"><head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="noindex, nofollow" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="index, follow" />
   <link rel="icon shortcut" href="/tukituki/favicon.ico" sizes="32x32" />
 <link rel="icon" href="/tukituki/favicon.svg" type="image/svg+xml" id="favicon-svg" />
 <link rel="icon" href="/tukituki/favicon-16x16.png" type="image/png" sizes="16x16" />
@@ -10,7 +10,7 @@
 <link fetchpriority="low" href="/tukituki/site.webmanifest" rel="manifest" />
 <title>TUI Guide – tukituki</title>
   <meta name="description" content="tukituki’s interactive terminal UI gives you a live view of every managed process in one window. You can tail logs, restart or stop individual processes, dump log files to disk, and exit without killing anything — all without leaving the terminal.
-Layout tukituki q=detach Q/^C=stop all ┌──────────────────────┬─────────────────────────────────────────────┐ │ * frontend │ server │ │ * marketing-site │ ────────────────────────────────────────────│ │ ▶ * server │ 2026/01/15 10:23:01 INFO starting HTTP... │ │ * worker │ 2026/01/15 10:23:01 INFO gRPC listening... │ │ │ │ │──────────────────────│ │ │ r restart s stop │ │ │ S start d dump │ │ │ c clear q detach │ │ │ Q/^C stop all │ │ └──────────────────────┴─────────────────────────────────────────────┘ The TUI is divided into three areas: the header bar, the left panel (process list), and the right panel (log viewport)." /><link rel="canonical" href="http://localhost:1313/tukituki/docs/tui/" itemprop="url" />
+Layout tukituki q=detach Q/^C=stop all ┌──────────────────────┬─────────────────────────────────────────────┐ │ * frontend │ server │ │ * marketing-site │ ────────────────────────────────────────────│ │ ▶ * server │ 2026/01/15 10:23:01 INFO starting HTTP... │ │ * worker │ 2026/01/15 10:23:01 INFO gRPC listening... │ │ │ │ │──────────────────────│ │ │ r restart s stop │ │ │ S start d dump │ │ │ c clear q detach │ │ │ Q/^C stop all │ │ └──────────────────────┴─────────────────────────────────────────────┘ The TUI is divided into three areas: the header bar, the left panel (process list), and the right panel (log viewport)." /><link rel="canonical" href="https://dvaldivia.github.io/tukituki/docs/tui/" itemprop="url" />
 
 <meta property="og:title" content="TUI Guide">
 <meta
@@ -25,23 +25,29 @@ Layout tukituki q=detach Q/^C=stop all ┌────────────�
   content="
     website
   ">
-<meta property="og:url" content="http://localhost:1313/tukituki/docs/tui/">
+<meta property="og:url" content="https://dvaldivia.github.io/tukituki/docs/tui/">
 
 
   <meta itemprop="name" content="TUI Guide">
   <meta itemprop="description" content="tukituki’s interactive terminal UI gives you a live view of every managed process in one window. You can tail logs, restart or stop individual processes, dump log files to disk, and exit without killing anything — all without leaving the terminal.
 Layout tukituki q=detach Q/^C=stop all ┌──────────────────────┬─────────────────────────────────────────────┐ │ * frontend │ server │ │ * marketing-site │ ────────────────────────────────────────────│ │ ▶ * server │ 2026/01/15 10:23:01 INFO starting HTTP... │ │ * worker │ 2026/01/15 10:23:01 INFO gRPC listening... │ │ │ │ │──────────────────────│ │ │ r restart s stop │ │ │ S start d dump │ │ │ c clear q detach │ │ │ Q/^C stop all │ │ └──────────────────────┴─────────────────────────────────────────────┘ The TUI is divided into three areas: the header bar, the left panel (process list), and the right panel (log viewport).">
-  <meta itemprop="wordCount" content="727">
+  <meta itemprop="wordCount" content="842">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="TUI Guide">
   <meta name="twitter:description" content="tukituki’s interactive terminal UI gives you a live view of every managed process in one window. You can tail logs, restart or stop individual processes, dump log files to disk, and exit without killing anything — all without leaving the terminal.
 Layout tukituki q=detach Q/^C=stop all ┌──────────────────────┬─────────────────────────────────────────────┐ │ * frontend │ server │ │ * marketing-site │ ────────────────────────────────────────────│ │ ▶ * server │ 2026/01/15 10:23:01 INFO starting HTTP... │ │ * worker │ 2026/01/15 10:23:01 INFO gRPC listening... │ │ │ │ │──────────────────────│ │ │ r restart s stop │ │ │ S start d dump │ │ │ c clear q detach │ │ │ Q/^C stop all │ │ └──────────────────────┴─────────────────────────────────────────────┘ The TUI is divided into three areas: the header bar, the left panel (process list), and the right panel (log viewport).">
-<link href="/tukituki/css/compiled/main.css" rel="stylesheet" />
-    <link href="/tukituki/css/variables.css" rel="stylesheet" />
-    <link href="/tukituki/css/custom.css" rel="stylesheet" />
+
+    <link rel="preload" href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" as="style" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
+    <link href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" rel="stylesheet" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
 
   
-<script src="/tukituki/js/main-head.js" integrity=""></script>
+
+
+
+
+
+
+<script src="/tukituki/js/main-head.min.94da6f95b126542222dab3a6e07ffefe1aaf63ec3ca555e827b58b80e7d3f0b7.js" integrity="sha256-lNpvlbEmVCIi2rOm4H/&#43;/hqvY&#43;w8pVXoJ7WLgOfT8Lc="></script>
 
   
   
@@ -263,6 +269,18 @@ Layout tukituki q=detach Q/^C=stop all ┌────────────�
     </a>
   </div>
               
+            </li><li class="hx:flex hx:flex-col "><div class="hextra-sidebar-item hx:group hx:relative hx:flex hx:items-center" data-active="false">
+    <a
+      class="hx:flex hx:items-center hx:justify-between hx:gap-2 hx:grow hx:cursor-pointer hx:rounded-sm hx:px-2 hx:py-1.5 hx:text-sm hx:transition-colors [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none]
+      hx:hextra-focus-visible-inset
+        hx:text-gray-500 hx:hover:bg-gray-100 hx:hover:text-gray-900 hx:contrast-more:border hx:contrast-more:border-transparent hx:contrast-more:text-gray-900 hx:contrast-more:hover:border-gray-900 hx:dark:text-neutral-400 hx:dark:hover:bg-primary-100/5 hx:dark:hover:text-gray-50 hx:contrast-more:dark:text-gray-50 hx:contrast-more:dark:hover:border-gray-50"
+      href="/tukituki/docs/guides/opentelemetry/"
+      
+    >
+      <span class="hx:min-w-0 [word-break:break-word]">OpenTelemetry Error Collection</span>
+    </a>
+  </div>
+              
             </li></ul>
       </div></li>
         
@@ -450,6 +468,12 @@ Layout tukituki q=detach Q/^C=stop all ┌────────────�
 <li>The <strong>process name</strong> as defined in the run target file.</li>
 <li>A <code>▶</code> marker on the currently selected row.</li>
 </ul>
+<p>When run targets are organised into <a href="/tukituki/docs/configuration/run-targets/#grouping-targets-into-folders">folder groups</a> (subdirectories of <code>.run/</code>), each group is shown as a collapsible folder row:</p>
+<ul>
+<li><code>▶ kb (3)</code> — collapsed: the arrow points right, children are hidden.</li>
+<li><code>▼ kb (3)</code> — expanded: the arrow points down, children are listed indented underneath.</li>
+</ul>
+<p>Folders are <strong>collapsed by default</strong>, keeping the panel compact regardless of how many targets a group contains. The <code>(3)</code> counter on the folder row always reflects the total number of targets in the group, expanded or not.</p>
 <p>Below the process list, a horizontal rule separates the list from the <strong>key hint area</strong>, which displays the most commonly used keybindings as a quick reference without leaving the screen.</p>
 <h3>Status Icons<span class="hx:absolute hx:-mt-20" id="status-icons"></span>
     <a href="#status-icons" class="subheading-anchor" aria-label="Permalink for this section"></a></h3><table>
@@ -515,7 +539,19 @@ Layout tukituki q=detach Q/^C=stop all ┌────────────�
       </tr>
       <tr>
           <td><code>Tab</code></td>
-          <td>Cycle to the next process (wraps around).</td>
+          <td>Cycle to the next row (wraps around).</td>
+      </tr>
+      <tr>
+          <td><code>→</code> / <code>l</code></td>
+          <td>Expand the selected folder.</td>
+      </tr>
+      <tr>
+          <td><code>←</code> / <code>h</code></td>
+          <td>Collapse the selected folder (or jump up to its header if a child is selected).</td>
+      </tr>
+      <tr>
+          <td><code>Enter</code> / <code>Space</code></td>
+          <td>Toggle the selected folder.</td>
       </tr>
       <tr>
           <td><code>PgUp</code> / <code>b</code></td>
@@ -622,7 +658,7 @@ Layout tukituki q=detach Q/^C=stop all ┌────────────�
   </a></div><div class="hx:mt-6 hx:text-xs">© 2025 Hextra Project.</div></div>
     </div></footer>
     
-    <script defer src="/tukituki/js/main.js" integrity=""></script>
-<script defer src="/tukituki/js/flexsearch.9f5b5908f93ae86f1ecd4b043b799f580c2d1654e703dd9357d568ac41b2547a.js" integrity="sha256-n1tZCPk66G8ezUsEO3mfWAwtFlTnA92TV9VorEGyVHo=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.js" integrity=""></script>
+    <script defer src="/tukituki/js/main.min.a03bf8dbdb527a767062c81d3a2fc5a91c71d0ea086ac4eac110bc9cbb4f380b.js" integrity="sha256-oDv429tSenZwYsgdOi/FqRxx0OoIasTqwRC8nLtPOAs="></script>
+<script defer src="/tukituki/js/flexsearch.433e941a8a573ebb9931fc16fc75266ab6b93f569ac2fb4f3dc66882e0416f4c.js" integrity="sha256-Qz6UGopXPruZMfwW/HUmara5P1aawvtPPcZoguBBb0w=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.min.9b5d3e9fc67ab4ea992026c85954736a0ac782b3a3c2f6829d00778ec91920c3.js" integrity="sha256-m10&#43;n8Z6tOqZICbIWVRzagrHgrOjwvaCnQB3jskZIMM="></script>
   </body>
 </html>

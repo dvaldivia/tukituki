@@ -10,7 +10,34 @@ Each process that tukituki manages is described by a YAML file placed in the run
 tukituki loads every file matching `*.yaml` or `*.yml` inside the run directory and sorts the resulting processes alphabetically by their `name` field. The sort order affects the default display order in the TUI process list.
 
 {{< callout type="warning" >}}
-`name` must be unique across **all** YAML files in the run directory. Duplicate names will cause a startup error.
+`name` must be unique across **all** YAML files in the run directory, including those nested under group subdirectories. Duplicate names will cause a startup error.
+{{< /callout >}}
+
+## Grouping Targets Into Folders
+
+When the number of run targets grows, you can keep the TUI tidy by moving related targets into a subdirectory of the run directory. Every YAML file inside an immediate subdirectory becomes part of a **group** named after that subdirectory:
+
+```
+.run/
+├── api.yaml              # ungrouped — appears at the top of the list
+├── worker.yaml           # ungrouped
+└── kb/                   # group "kb"
+    ├── acme.yaml         # collapsed under the "kb" folder
+    ├── meshlink.yaml
+    └── sentinel.yaml
+```
+
+Behaviour:
+
+- Targets inside a subdirectory are loaded and started exactly like top-level targets — grouping is purely a display concern.
+- In the TUI each group is rendered as a single folder row (`▶ kb (3)`). The arrow points **right** when collapsed and **down** when expanded (`▼ kb (3)`).
+- Folders are **collapsed by default**, so a project with many group members has the same visual footprint as one with a single row per group.
+- Expand or collapse a folder with `→`/`l` or `←`/`h` while it is selected, or press `Enter`/`Space` to toggle it. See the [TUI keybindings reference]({{< relref "/docs/tui/keybindings" >}}) for the full list.
+- Only one level of nesting is honoured. Files in `.run/foo/bar/*.yaml` are ignored. Hidden subdirectories (those whose name starts with `.`) are skipped.
+- The headless CLI (`tukituki list`, `start`, `stop`, etc.) is unaffected — it operates on target **names** and ignores group membership entirely.
+
+{{< callout type="info" >}}
+The group name is derived from the subdirectory; it cannot be set in the YAML file. To move a target between groups, move (or rename) its YAML file.
 {{< /callout >}}
 
 ## Field Reference

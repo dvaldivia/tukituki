@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr"><head><script src="/tukituki/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=tukituki/livereload" data-no-instant defer></script>
+<html lang="en" dir="ltr"><head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="noindex, nofollow" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="index, follow" />
   <link rel="icon shortcut" href="/tukituki/favicon.ico" sizes="32x32" />
 <link rel="icon" href="/tukituki/favicon.svg" type="image/svg+xml" id="favicon-svg" />
 <link rel="icon" href="/tukituki/favicon-16x16.png" type="image/png" sizes="16x16" />
@@ -10,7 +10,7 @@
 <link fetchpriority="low" href="/tukituki/site.webmanifest" rel="manifest" />
 <title>Run Target Reference – tukituki</title>
   <meta name="description" content="Each process that tukituki manages is described by a YAML file placed in the run directory (default: .run/). You can have one process per file or several — the only constraint is that every name must be unique across all files in the directory.
-File Discovery tukituki loads every file matching *.yaml or *.yml inside the run directory and sorts the resulting processes alphabetically by their name field. The sort order affects the default display order in the TUI process list." /><link rel="canonical" href="http://localhost:1313/tukituki/docs/configuration/run-targets/" itemprop="url" />
+File Discovery tukituki loads every file matching *.yaml or *.yml inside the run directory and sorts the resulting processes alphabetically by their name field. The sort order affects the default display order in the TUI process list." /><link rel="canonical" href="https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/" itemprop="url" />
 
 <meta property="og:title" content="Run Target Reference">
 <meta
@@ -27,7 +27,7 @@ File Discovery
   content="
     article
   ">
-<meta property="og:url" content="http://localhost:1313/tukituki/docs/configuration/run-targets/"><meta property="article:section" content="docs">
+<meta property="og:url" content="https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/"><meta property="article:section" content="docs">
 
 
 
@@ -35,17 +35,23 @@ File Discovery
   <meta itemprop="name" content="Run Target Reference">
   <meta itemprop="description" content="Each process that tukituki manages is described by a YAML file placed in the run directory (default: .run/). You can have one process per file or several — the only constraint is that every name must be unique across all files in the directory.
 File Discovery tukituki loads every file matching *.yaml or *.yml inside the run directory and sorts the resulting processes alphabetically by their name field. The sort order affects the default display order in the TUI process list.">
-  <meta itemprop="wordCount" content="618">
+  <meta itemprop="wordCount" content="874">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Run Target Reference">
   <meta name="twitter:description" content="Each process that tukituki manages is described by a YAML file placed in the run directory (default: .run/). You can have one process per file or several — the only constraint is that every name must be unique across all files in the directory.
 File Discovery tukituki loads every file matching *.yaml or *.yml inside the run directory and sorts the resulting processes alphabetically by their name field. The sort order affects the default display order in the TUI process list.">
-<link href="/tukituki/css/compiled/main.css" rel="stylesheet" />
-    <link href="/tukituki/css/variables.css" rel="stylesheet" />
-    <link href="/tukituki/css/custom.css" rel="stylesheet" />
+
+    <link rel="preload" href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" as="style" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
+    <link href="/tukituki/css/compiled/main.min.1a431501cdeb52323c920e7761f7d9e327b2bee53160196c4bd1d34a3fd9fbc9.css" rel="stylesheet" integrity="sha256-GkMVAc3rUjI8kg53YffZ4yeyvuUxYBlsS9HTSj/Z&#43;8k=" />
 
   
-<script src="/tukituki/js/main-head.js" integrity=""></script>
+
+
+
+
+
+
+<script src="/tukituki/js/main-head.min.94da6f95b126542222dab3a6e07ffefe1aaf63ec3ca555e827b58b80e7d3f0b7.js" integrity="sha256-lNpvlbEmVCIi2rOm4H/&#43;/hqvY&#43;w8pVXoJ7WLgOfT8Lc="></script>
 
   
   
@@ -358,6 +364,10 @@ File Discovery tukituki loads every file matching *.yaml or *.yml inside the run
         </a>
       </li>
       <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
+        <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#grouping-targets-into-folders">Grouping Targets Into Folders
+        </a>
+      </li>
+      <li class="hx:my-2 hx:scroll-my-6 hx:scroll-py-6">
         <a class="hx:font-medium hx:inline-block hx:rounded-sm hx:text-gray-500 hx:hover:text-gray-900 hx:dark:text-gray-400 hx:dark:hover:text-gray-300 hx:contrast-more:text-gray-900 hx:contrast-more:underline hx:contrast-more:dark:text-gray-50 hx:w-full hx:wrap-break-word hx:hextra-focus-visible-inset" href="#field-reference">Field Reference
         </a>
       </li>
@@ -418,7 +428,46 @@ File Discovery tukituki loads every file matching *.yaml or *.yml inside the run
   <div class="hx:ltr:pl-3 hx:ltr:pr-2 hx:rtl:pr-3 hx:rtl:pl-2"><svg height=1.2em class="hx:inline-block hx:align-middle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>
 
   <div class="hx:w-full hx:min-w-0 hx:leading-7">
-    <div class="hx:mt-6 hx:leading-7 hx:first:mt-0"><code>name</code> must be unique across <strong>all</strong> YAML files in the run directory. Duplicate names will cause a startup error.</div>
+    <div class="hx:mt-6 hx:leading-7 hx:first:mt-0"><code>name</code> must be unique across <strong>all</strong> YAML files in the run directory, including those nested under group subdirectories. Duplicate names will cause a startup error.</div>
+  </div>
+</div>
+
+<h2>Grouping Targets Into Folders<span class="hx:absolute hx:-mt-20" id="grouping-targets-into-folders"></span>
+    <a href="#grouping-targets-into-folders" class="subheading-anchor" aria-label="Permalink for this section"></a></h2><p>When the number of run targets grows, you can keep the TUI tidy by moving related targets into a subdirectory of the run directory. Every YAML file inside an immediate subdirectory becomes part of a <strong>group</strong> named after that subdirectory:</p>
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+
+<div><pre><code>.run/
+├── api.yaml              # ungrouped — appears at the top of the list
+├── worker.yaml           # ungrouped
+└── kb/                   # group &#34;kb&#34;
+    ├── acme.yaml         # collapsed under the &#34;kb&#34; folder
+    ├── meshlink.yaml
+    └── sentinel.yaml</code></pre></div><div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0">
+  <button
+    class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+    title="Copy code"
+    aria-label="Copy code"
+    data-copied-label="Copied!"
+  >
+    <div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"></div>
+<div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"></div>
+  </button>
+</div>
+</div>
+<p>Behaviour:</p>
+<ul>
+<li>Targets inside a subdirectory are loaded and started exactly like top-level targets — grouping is purely a display concern.</li>
+<li>In the TUI each group is rendered as a single folder row (<code>▶ kb (3)</code>). The arrow points <strong>right</strong> when collapsed and <strong>down</strong> when expanded (<code>▼ kb (3)</code>).</li>
+<li>Folders are <strong>collapsed by default</strong>, so a project with many group members has the same visual footprint as one with a single row per group.</li>
+<li>Expand or collapse a folder with <code>→</code>/<code>l</code> or <code>←</code>/<code>h</code> while it is selected, or press <code>Enter</code>/<code>Space</code> to toggle it. See the <a href="/tukituki/docs/tui/keybindings/">TUI keybindings reference</a> for the full list.</li>
+<li>Only one level of nesting is honoured. Files in <code>.run/foo/bar/*.yaml</code> are ignored. Hidden subdirectories (those whose name starts with <code>.</code>) are skipped.</li>
+<li>The headless CLI (<code>tukituki list</code>, <code>start</code>, <code>stop</code>, etc.) is unaffected — it operates on target <strong>names</strong> and ignores group membership entirely.</li>
+</ul>
+<div class="hx:overflow-x-auto hx:mt-6 hx:flex hx:rounded-lg hx:border hx:py-2 hx:ltr:pr-4 hx:rtl:pl-4 hx:contrast-more:border-current hx:contrast-more:dark:border-current hx:border-blue-200 hx:bg-blue-100 hx:text-blue-900 hx:dark:border-blue-200/30 hx:dark:bg-blue-900/30 hx:dark:text-blue-200">
+  <div class="hx:ltr:pl-3 hx:ltr:pr-2 hx:rtl:pr-3 hx:rtl:pl-2"><svg height=1.2em class="hx:inline-block hx:align-middle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+
+  <div class="hx:w-full hx:min-w-0 hx:leading-7">
+    <div class="hx:mt-6 hx:leading-7 hx:first:mt-0">The group name is derived from the subdirectory; it cannot be set in the YAML file. To move a target between groups, move (or rename) its YAML file.</div>
   </div>
 </div>
 
@@ -628,7 +677,7 @@ File Discovery tukituki loads every file matching *.yaml or *.yml inside the run
   </a></div><div class="hx:mt-6 hx:text-xs">© 2025 Hextra Project.</div></div>
     </div></footer>
     
-    <script defer src="/tukituki/js/main.js" integrity=""></script>
-<script defer src="/tukituki/js/flexsearch.9f5b5908f93ae86f1ecd4b043b799f580c2d1654e703dd9357d568ac41b2547a.js" integrity="sha256-n1tZCPk66G8ezUsEO3mfWAwtFlTnA92TV9VorEGyVHo=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.js" integrity=""></script>
+    <script defer src="/tukituki/js/main.min.a03bf8dbdb527a767062c81d3a2fc5a91c71d0ea086ac4eac110bc9cbb4f380b.js" integrity="sha256-oDv429tSenZwYsgdOi/FqRxx0OoIasTqwRC8nLtPOAs="></script>
+<script defer src="/tukituki/js/flexsearch.433e941a8a573ebb9931fc16fc75266ab6b93f569ac2fb4f3dc66882e0416f4c.js" integrity="sha256-Qz6UGopXPruZMfwW/HUmara5P1aawvtPPcZoguBBb0w=" crossorigin="anonymous"></script><script defer src="/tukituki/en.search.min.9b5d3e9fc67ab4ea992026c85954736a0ac782b3a3c2f6829d00778ec91920c3.js" integrity="sha256-m10&#43;n8Z6tOqZICbIWVRzagrHgrOjwvaCnQB3jskZIMM="></script>
   </body>
 </html>

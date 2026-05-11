@@ -42,6 +42,12 @@ type RunTarget struct {
 	// tukituki injects OTEL_EXPORTER_OTLP_ENDPOINT into the process environment
 	// and ensures a bundled OTLP receiver is running.
 	Otel bool `yaml:"otel"`
+	// Group is the name of the subdirectory under the run directory that this
+	// target was loaded from.  Empty for targets defined directly under the
+	// run directory.  Targets sharing a non-empty Group are displayed under a
+	// collapsible folder row in the TUI.  Derived from filesystem layout —
+	// not configurable via YAML.
+	Group string `yaml:"-"`
 	// ParseError is set when the YAML file could not be parsed. The target
 	// will appear in the TUI with the error displayed but cannot be started.
 	ParseError string `yaml:"-"`
@@ -53,9 +59,12 @@ type RunTarget struct {
 	SourceFile string `yaml:"-"`
 }
 
-// LoadTargets reads all *.yaml and *.yml files from runDir and returns the
-// parsed RunTargets sorted by Name.  It returns an error if runDir does not
-// exist.
+// LoadTargets reads YAML run-target files from runDir and returns the parsed
+// RunTargets sorted by Name.  Files at the top level produce ungrouped targets;
+// files inside an immediate subdirectory produce targets whose Group is set to
+// the subdirectory name (so e.g. `.run/kb/sentinel.yaml` becomes a target with
+// Group="kb").  Deeper nesting is ignored.  Returns an error if runDir does
+// not exist.
 func LoadTargets(runDir string) ([]RunTarget, error) {
 	info, err := os.Stat(runDir)
 	if err != nil {
@@ -68,34 +77,60 @@ func LoadTargets(runDir string) ([]RunTarget, error) {
 		return nil, fmt.Errorf("run directory path is not a directory: %s", runDir)
 	}
 
-	patterns := []string{
-		filepath.Join(runDir, "*.yaml"),
-		filepath.Join(runDir, "*.yml"),
+	// Top-level files (no group).
+	files, err := globYAML(runDir)
+	if err != nil {
+		return nil, err
 	}
 
-	var files []string
-	for _, pattern := range patterns {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("glob %q: %w", pattern, err)
+	type fileEntry struct {
+		path  string
+		group string
+	}
+	var entries []fileEntry
+	for _, f := range files {
+		entries = append(entries, fileEntry{path: f, group: ""})
+	}
+
+	// One level of subdirectories — each becomes a group.
+	dirEntries, err := os.ReadDir(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("read run directory: %w", err)
+	}
+	for _, de := range dirEntries {
+		if !de.IsDir() {
+			continue
 		}
-		files = append(files, matches...)
+		// Ignore dot-directories (e.g. .git) by convention.
+		if strings.HasPrefix(de.Name(), ".") {
+			continue
+		}
+		sub := filepath.Join(runDir, de.Name())
+		subFiles, err := globYAML(sub)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range subFiles {
+			entries = append(entries, fileEntry{path: f, group: de.Name()})
+		}
 	}
 
 	var targets []RunTarget
-	for _, file := range files {
-		absFile, _ := filepath.Abs(file)
-		t, err := parseFile(file)
+	for _, e := range entries {
+		absFile, _ := filepath.Abs(e.path)
+		t, err := parseFile(e.path)
 		if err != nil {
 			// Record the error but keep going so the TUI can display it.
-			name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+			name := strings.TrimSuffix(filepath.Base(e.path), filepath.Ext(e.path))
 			targets = append(targets, RunTarget{
 				Name:       name,
-				ParseError: fmt.Sprintf("%s: %v", filepath.Base(file), err),
+				Group:      e.group,
+				ParseError: fmt.Sprintf("%s: %v", filepath.Base(e.path), err),
 				SourceFile: absFile,
 			})
 			continue
 		}
+		t.Group = e.group
 		t.SourceFile = absFile
 		targets = append(targets, t)
 	}
@@ -105,6 +140,23 @@ func LoadTargets(runDir string) ([]RunTarget, error) {
 	})
 
 	return targets, nil
+}
+
+// globYAML returns every *.yaml and *.yml file directly inside dir.
+func globYAML(dir string) ([]string, error) {
+	patterns := []string{
+		filepath.Join(dir, "*.yaml"),
+		filepath.Join(dir, "*.yml"),
+	}
+	var files []string
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("glob %q: %w", pattern, err)
+		}
+		files = append(files, matches...)
+	}
+	return files, nil
 }
 
 // HasOtelTarget reports whether any target in the list has Otel enabled.

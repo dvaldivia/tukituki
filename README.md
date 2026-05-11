@@ -138,8 +138,11 @@ tukituki restart api --json
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` / `j` / `k` | Select process |
-| `Tab` | Cycle to next process |
+| `↑` / `↓` / `j` / `k` | Select row |
+| `Tab` | Cycle to next row |
+| `→` / `l` | Expand selected folder |
+| `←` / `h` | Collapse selected folder (or jump up to its header) |
+| `Enter` / `Space` | Toggle selected folder |
 | `r` | Restart selected process |
 | `s` | Stop selected process |
 | `S` | Start selected process |
@@ -181,6 +184,22 @@ cleanup:
 | `description` | no | Human-readable label shown in `list` and `status` |
 | `cleanup` | no | Shell commands run after the process stops |
 | `otel` | no | Enable OpenTelemetry log collection for this target (`true`/`false`) |
+
+### Grouping targets into folders
+
+For projects with many run targets, move related YAML files into a subdirectory of `.run/` and tukituki will display them under a collapsible folder in the TUI:
+
+```
+.run/
+├── api.yaml
+├── worker.yaml
+└── kb/
+    ├── acme.yaml         # all kb-* targets appear under
+    ├── meshlink.yaml     # a single "▶ kb (3)" folder row,
+    └── sentinel.yaml     # collapsed by default
+```
+
+The arrow flips from `▶` to `▼` when the folder is expanded. Only one level of nesting is honoured; the headless CLI ignores grouping entirely and continues to operate on target names.
 
 ### How processes run
 

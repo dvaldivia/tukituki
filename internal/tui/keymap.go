@@ -58,6 +58,18 @@ type keyMap struct {
 	// Describe shows how the selected target was launched, including
 	// injected environment variables.
 	Describe key.Binding
+
+	// ExpandFolder expands the currently selected folder row (no-op for
+	// target rows and for already-expanded folders).
+	ExpandFolder key.Binding
+
+	// CollapseFolder collapses the currently selected folder row, or — when
+	// a target inside a folder is selected — jumps the cursor up to the
+	// folder header and collapses it.
+	CollapseFolder key.Binding
+
+	// ToggleFolder toggles the expansion of the currently selected folder.
+	ToggleFolder key.Binding
 }
 
 // defaultKeyMap returns the default key bindings.
@@ -143,6 +155,18 @@ func defaultKeyMap() keyMap {
 		Describe: key.NewBinding(
 			key.WithKeys("D"),
 			key.WithHelp("D", "describe launch (env, cmd, workdir)"),
+		),
+		ExpandFolder: key.NewBinding(
+			key.WithKeys("right", "l"),
+			key.WithHelp("→/l", "expand folder"),
+		),
+		CollapseFolder: key.NewBinding(
+			key.WithKeys("left", "h"),
+			key.WithHelp("←/h", "collapse folder"),
+		),
+		ToggleFolder: key.NewBinding(
+			key.WithKeys("enter", " "),
+			key.WithHelp("enter/space", "toggle folder"),
 		),
 	}
 }

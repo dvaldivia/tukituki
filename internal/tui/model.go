@@ -196,13 +196,39 @@ func reloadTargets(runDir, projectRoot string) tea.Cmd {
 	}
 }
 
+// ─── Display rows ────────────────────────────────────────────────────────────
+
+// rowKind discriminates between a folder header row and a target row in the
+// left-panel list.
+type rowKind int
+
+const (
+	rowTarget rowKind = iota
+	rowFolder
+)
+
+// displayRow is one visible entry in the left-panel list. Folder rows act as
+// collapsible headers grouping every target loaded from the matching
+// subdirectory of the run directory.
+type displayRow struct {
+	kind   rowKind
+	target int    // index into Model.targets, -1 for folder rows
+	group  string // folder name for folder rows; parent group ("" if top-level) for target rows
+}
+
 // ─── Model ───────────────────────────────────────────────────────────────────
 
 // Model is the root bubbletea model for the tukituki TUI.
 type Model struct {
-	targets    []config.RunTarget
-	manager    ManagerInterface
-	selected   int // index into targets
+	targets  []config.RunTarget
+	manager  ManagerInterface
+	selected int          // index into rows (the visible list)
+	rows     []displayRow // computed view of targets + folder headers
+
+	// folderExpanded tracks which folder groups are currently expanded.
+	// Missing entries are treated as collapsed (the default for new folders).
+	folderExpanded map[string]bool
+
 	logs       map[string]*logBuffer
 	viewport   viewport.Model
 	width      int
@@ -287,11 +313,27 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface, runDir, proj
 	vp := viewport.New(80, 24) // placeholder; resized on WindowSizeMsg
 	vp.SetContent("")
 
-	// Watch the run directory for config file changes.
+	// Watch the run directory and its immediate subdirectories for config
+	// file changes — subdirectories are how folder grouping is expressed, so
+	// edits inside them need to trigger reloads just like top-level edits.
 	var watcher *fsnotify.Watcher
 	if runDir != "" {
 		if w, err := fsnotify.NewWatcher(); err == nil {
+			ok := false
 			if err := w.Add(runDir); err == nil {
+				ok = true
+			}
+			if entries, err := os.ReadDir(runDir); err == nil {
+				for _, de := range entries {
+					if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
+						continue
+					}
+					if err := w.Add(filepath.Join(runDir, de.Name())); err == nil {
+						ok = true
+					}
+				}
+			}
+			if ok {
 				watcher = w
 			} else {
 				w.Close()
@@ -309,23 +351,172 @@ func NewModel(targets []config.RunTarget, manager ManagerInterface, runDir, proj
 		otelEvents = ch
 	}
 
-	return Model{
-		targets:      targets,
-		manager:      manager,
-		selected:     0,
-		logs:         logs,
-		viewport:     vp,
-		logWatches:   logWatches,
-		ctx:          ctx,
-		cancel:       cancel,
-		statuses:     statuses,
-		keys:         defaultKeyMap(),
-		atBottom:     true,
-		mouseEnabled: true,
-		runDir:       runDir,
-		projectRoot:  projectRoot,
-		fsWatcher:    watcher,
-		otelEvents:   otelEvents,
+	m := Model{
+		targets:        targets,
+		manager:        manager,
+		selected:       0,
+		logs:           logs,
+		viewport:       vp,
+		logWatches:     logWatches,
+		ctx:            ctx,
+		cancel:         cancel,
+		statuses:       statuses,
+		keys:           defaultKeyMap(),
+		atBottom:       true,
+		mouseEnabled:   true,
+		runDir:         runDir,
+		projectRoot:    projectRoot,
+		fsWatcher:      watcher,
+		otelEvents:     otelEvents,
+		folderExpanded: make(map[string]bool),
+	}
+	m.rebuildRows()
+	return m
+}
+
+// rebuildRows recomputes the visible rows for the left panel from the current
+// target list and folder-expansion state.  Layout:
+//   - Top-level (un-grouped, non-virtual) targets, in their existing order.
+//   - One folder header per group, followed by its targets when expanded.
+//   - Virtual targets (e.g. otel-errors) at the end so the separator and
+//     blink behaviour in renderLeft remain unchanged.
+//
+// Folder ordering follows the order in which each group first appears in
+// m.targets — which (because LoadTargets sorts by name) is the alphabetical
+// position of the group's first member.  This keeps the list stable across
+// reloads.
+func (m *Model) rebuildRows() {
+	rows := make([]displayRow, 0, len(m.targets))
+
+	// Pass 1: top-level (no group) and non-virtual targets.
+	for i, t := range m.targets {
+		if t.Virtual || t.Group != "" {
+			continue
+		}
+		rows = append(rows, displayRow{kind: rowTarget, target: i, group: ""})
+	}
+
+	// Pass 2: discover groups in first-seen order.
+	seen := make(map[string]bool)
+	var groups []string
+	for _, t := range m.targets {
+		if t.Virtual || t.Group == "" {
+			continue
+		}
+		if !seen[t.Group] {
+			seen[t.Group] = true
+			groups = append(groups, t.Group)
+		}
+	}
+	for _, g := range groups {
+		rows = append(rows, displayRow{kind: rowFolder, target: -1, group: g})
+		if m.folderExpanded[g] {
+			for i, t := range m.targets {
+				if !t.Virtual && t.Group == g {
+					rows = append(rows, displayRow{kind: rowTarget, target: i, group: g})
+				}
+			}
+		}
+	}
+
+	// Pass 3: virtual targets, in their target-list order.
+	for i, t := range m.targets {
+		if t.Virtual {
+			rows = append(rows, displayRow{kind: rowTarget, target: i, group: ""})
+		}
+	}
+
+	m.rows = rows
+	if m.selected >= len(m.rows) {
+		m.selected = len(m.rows) - 1
+	}
+	if m.selected < 0 {
+		m.selected = 0
+	}
+}
+
+// selectedTargetIdx returns the index into m.targets for the currently
+// selected row, or -1 if a folder row (or no row) is selected.
+func (m *Model) selectedTargetIdx() int {
+	if m.selected < 0 || m.selected >= len(m.rows) {
+		return -1
+	}
+	r := m.rows[m.selected]
+	if r.kind != rowTarget {
+		return -1
+	}
+	return r.target
+}
+
+// selectedTargetName returns the currently selected target's name, or ""
+// when a folder row (or nothing) is selected.
+func (m *Model) selectedTargetName() string {
+	idx := m.selectedTargetIdx()
+	if idx < 0 {
+		return ""
+	}
+	return m.targets[idx].Name
+}
+
+// selectedFolder returns the folder name when a folder row is selected,
+// or "" otherwise.
+func (m *Model) selectedFolder() string {
+	if m.selected < 0 || m.selected >= len(m.rows) {
+		return ""
+	}
+	r := m.rows[m.selected]
+	if r.kind != rowFolder {
+		return ""
+	}
+	return r.group
+}
+
+// countTargetsInGroup returns the number of (non-virtual) targets that
+// belong to the named group.
+func (m *Model) countTargetsInGroup(group string) int {
+	n := 0
+	for _, t := range m.targets {
+		if !t.Virtual && t.Group == group {
+			n++
+		}
+	}
+	return n
+}
+
+// refreshWatcherDirs re-scans the run directory and adds any newly-created
+// subdirectories to the fsnotify watcher.  fsnotify.Add is idempotent for
+// paths that are already being watched, so it is safe to call on every
+// reload.  Errors are ignored — failure to watch a single subdirectory just
+// means edits inside it won't trigger automatic reloads.
+func (m *Model) refreshWatcherDirs() {
+	if m.fsWatcher == nil || m.runDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(m.runDir)
+	if err != nil {
+		return
+	}
+	for _, de := range entries {
+		if !de.IsDir() || strings.HasPrefix(de.Name(), ".") {
+			continue
+		}
+		_ = m.fsWatcher.Add(filepath.Join(m.runDir, de.Name()))
+	}
+}
+
+// collapseGroupAndJumpToHeader moves the selection up to the folder header
+// row for the named group and marks the folder collapsed. Used by the
+// left/h key when a target inside a folder is selected.
+func (m *Model) collapseGroupAndJumpToHeader(group string) {
+	m.folderExpanded[group] = false
+	m.rebuildRows()
+	for i, r := range m.rows {
+		if r.kind == rowFolder && r.group == group {
+			m.selected = i
+			m.loadSelectedLogs()
+			m.markOtelSeenIfSelected()
+			return
+		}
 	}
 }
 
@@ -379,9 +570,11 @@ func (m Model) Init() tea.Cmd {
 	}
 
 	// Load selected target's logs into the viewport.
-	if len(m.targets) > 0 {
-		m.viewport.SetContent(m.logs[m.targets[0].Name].content())
-		m.viewport.GotoBottom()
+	if name := m.selectedTargetName(); name != "" {
+		if buf := m.logs[name]; buf != nil {
+			m.viewport.SetContent(buf.content())
+			m.viewport.GotoBottom()
+		}
 	}
 
 	return tea.Batch(cmds...)
@@ -472,22 +665,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 			case matchKey(msg, m.keys.Down):
-				if m.selected < len(m.targets)-1 {
+				if m.selected < len(m.rows)-1 {
 					m.selected++
 					m.loadSelectedLogs()
 					m.markOtelSeenIfSelected()
 				}
 
 			case matchKey(msg, m.keys.Tab):
-				if len(m.targets) > 0 {
-					m.selected = (m.selected + 1) % len(m.targets)
+				if len(m.rows) > 0 {
+					m.selected = (m.selected + 1) % len(m.rows)
 					m.loadSelectedLogs()
 					m.markOtelSeenIfSelected()
 				}
 
+			case matchKey(msg, m.keys.ExpandFolder):
+				if g := m.selectedFolder(); g != "" && !m.folderExpanded[g] {
+					m.folderExpanded[g] = true
+					m.rebuildRows()
+				}
+
+			case matchKey(msg, m.keys.CollapseFolder):
+				if g := m.selectedFolder(); g != "" && m.folderExpanded[g] {
+					m.folderExpanded[g] = false
+					m.rebuildRows()
+				} else if idx := m.selectedTargetIdx(); idx >= 0 {
+					if pg := m.targets[idx].Group; pg != "" {
+						m.collapseGroupAndJumpToHeader(pg)
+					}
+				}
+
+			case matchKey(msg, m.keys.ToggleFolder):
+				if g := m.selectedFolder(); g != "" {
+					m.folderExpanded[g] = !m.folderExpanded[g]
+					m.rebuildRows()
+				}
+
 			case matchKey(msg, m.keys.Restart):
-				if len(m.targets) > 0 {
-					name := m.targets[m.selected].Name
+				if name := m.selectedTargetName(); name != "" {
 					cmds = append(cmds, m.doRestart(name))
 				}
 
@@ -505,26 +719,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 			case matchKey(msg, m.keys.Stop):
-				if len(m.targets) > 0 {
-					name := m.targets[m.selected].Name
+				if name := m.selectedTargetName(); name != "" {
 					cmds = append(cmds, m.doStop(name))
 				}
 
 			case matchKey(msg, m.keys.Start):
-				if len(m.targets) > 0 {
-					name := m.targets[m.selected].Name
+				if name := m.selectedTargetName(); name != "" {
 					cmds = append(cmds, m.doStart(name))
 				}
 
 			case matchKey(msg, m.keys.Dump):
-				if len(m.targets) > 0 {
-					name := m.targets[m.selected].Name
+				if name := m.selectedTargetName(); name != "" {
 					cmds = append(cmds, m.doDump(name))
 				}
 
 			case matchKey(msg, m.keys.Clear):
-				if len(m.targets) > 0 {
-					name := m.targets[m.selected].Name
+				if name := m.selectedTargetName(); name != "" {
 					cmds = append(cmds, m.doClear(name))
 				}
 
@@ -539,8 +749,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.helpMode = true
 
 			case matchKey(msg, m.keys.Describe):
-				if len(m.targets) > 0 {
-					name := m.targets[m.selected].Name
+				if name := m.selectedTargetName(); name != "" {
 					content, err := m.manager.Describe(name)
 					if err != nil {
 						m.statusMsg = fmt.Sprintf("describe %s: %s", name, err)
@@ -582,8 +791,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refreshViewportContent()
 
 			case matchKey(msg, m.keys.EditFile):
-				if len(m.targets) > 0 {
-					t := m.targets[m.selected]
+				if idx := m.selectedTargetIdx(); idx >= 0 {
+					t := m.targets[idx]
 					if t.SourceFile != "" {
 						editor := os.Getenv("EDITOR")
 						if editor == "" {
@@ -632,7 +841,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ok {
 			dropped := buf.append(msg.line)
 			// If this is the currently selected target, update viewport.
-			if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+			if m.selectedTargetName() == msg.target {
 				// Adjust search match indices when old lines were dropped.
 				if dropped > 0 && len(m.searchMatches) > 0 {
 					adjusted := m.searchMatches[:0]
@@ -682,7 +891,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if buf, ok := m.logs[msg.target]; ok {
 			buf.lines = nil
 		}
-		if len(m.targets) > 0 && m.targets[m.selected].Name == msg.target {
+		if m.selectedTargetName() == msg.target {
 			m.viewport.SetContent("")
 			if m.searchMode {
 				m.searchMatches = nil
@@ -711,6 +920,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Run-file changed on disk ────────────────────────────────────────────
 	case fileChangeMsg:
+		// Pick up any newly-created folder-group subdirectories so edits
+		// inside them trigger reloads going forward.
+		m.refreshWatcherDirs()
 		cmds = append(cmds, reloadTargets(m.runDir, m.projectRoot))
 		if m.fsWatcher != nil {
 			cmds = append(cmds, waitForFileChange(m.fsWatcher))
@@ -878,41 +1090,70 @@ func (m Model) renderLeft() string {
 	// the row style ONCE — this avoids nested ANSI that confuses lipgloss's
 	// width measurement and causes spurious line-wraps inside the container.
 	virtualSepStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+	folderStyle := lipgloss.NewStyle().Foreground(colorBlue).Bold(true)
 	var rows []string
 	virtualSepDone := false
-	for i, t := range m.targets {
-		// Render a thin separator before the first virtual target.
-		if t.Virtual && !virtualSepDone {
-			rows = append(rows, virtualSepStyle.Render(fitLine("  ─ collectors ─")))
-			virtualSepDone = true
-		}
-		iconStr := statusIconChar(m.statuses[t.Name]) // raw char, no ANSI
-		label := t.Name
-		if t.Name == otelTargetName && m.unreadOtelErrors > 0 {
-			label = fmt.Sprintf("%s (%d)", label, m.unreadOtelErrors)
-		}
-		// Reserve: cursor(2) + icon(1) + space(1) = 4 chars of prefix.
-		maxLabel := innerWidth - 4
-		if maxLabel < 1 {
-			maxLabel = 1
-		}
-		if len(label) > maxLabel {
-			label = label[:maxLabel]
-		}
-		switch {
-		case i == m.selected:
-			raw := fitLine("▶ " + iconStr + " " + label)
-			rows = append(rows, selectedItemStyle.Render(raw))
-		case t.Name == otelTargetName && m.unreadOtelErrors > 0:
-			raw := fitLine("  " + iconStr + " " + label)
-			style := otelAlertStyle
-			if !m.otelBlinkOn {
-				style = otelAlertOffStyle
+	for i, r := range m.rows {
+		switch r.kind {
+		case rowFolder:
+			arrow := "▶"
+			if m.folderExpanded[r.group] {
+				arrow = "▼"
 			}
-			rows = append(rows, style.Render(raw))
-		default:
-			raw := fitLine("  " + iconStr + " " + label)
-			rows = append(rows, normalItemStyle.Render(raw))
+			count := m.countTargetsInGroup(r.group)
+			label := fmt.Sprintf("%s %s (%d)", arrow, r.group, count)
+			maxLabel := innerWidth - 2 // cursor "▶ " or "  "
+			if maxLabel < 1 {
+				maxLabel = 1
+			}
+			if len(label) > maxLabel {
+				label = label[:maxLabel]
+			}
+			if i == m.selected {
+				rows = append(rows, selectedItemStyle.Render(fitLine("▶ "+label)))
+			} else {
+				rows = append(rows, folderStyle.Render(fitLine("  "+label)))
+			}
+		case rowTarget:
+			t := m.targets[r.target]
+			// Render a thin separator before the first virtual target.
+			if t.Virtual && !virtualSepDone {
+				rows = append(rows, virtualSepStyle.Render(fitLine("  ─ collectors ─")))
+				virtualSepDone = true
+			}
+			iconStr := statusIconChar(m.statuses[t.Name]) // raw char, no ANSI
+			label := t.Name
+			if t.Name == otelTargetName && m.unreadOtelErrors > 0 {
+				label = fmt.Sprintf("%s (%d)", label, m.unreadOtelErrors)
+			}
+			// Indent group members so the hierarchy is visible at a glance.
+			indent := ""
+			if r.group != "" {
+				indent = "  "
+			}
+			// Reserve: cursor(2) + indent + icon(1) + space(1).
+			maxLabel := innerWidth - 4 - len(indent)
+			if maxLabel < 1 {
+				maxLabel = 1
+			}
+			if len(label) > maxLabel {
+				label = label[:maxLabel]
+			}
+			switch {
+			case i == m.selected:
+				raw := fitLine("▶ " + indent + iconStr + " " + label)
+				rows = append(rows, selectedItemStyle.Render(raw))
+			case t.Name == otelTargetName && m.unreadOtelErrors > 0:
+				raw := fitLine("  " + indent + iconStr + " " + label)
+				style := otelAlertStyle
+				if !m.otelBlinkOn {
+					style = otelAlertOffStyle
+				}
+				rows = append(rows, style.Render(raw))
+			default:
+				raw := fitLine("  " + indent + iconStr + " " + label)
+				rows = append(rows, normalItemStyle.Render(raw))
+			}
 		}
 	}
 
@@ -979,11 +1220,19 @@ func (m Model) renderRight() string {
 	}
 
 	// Panel title.
-	targetName := "(none)"
-	if len(m.targets) > 0 {
-		targetName = m.targets[m.selected].Name
+	titleText := "(none)"
+	if name := m.selectedTargetName(); name != "" {
+		titleText = name
+	} else if g := m.selectedFolder(); g != "" {
+		arrow := "▶"
+		state := "collapsed"
+		if m.folderExpanded[g] {
+			arrow = "▼"
+			state = "expanded"
+		}
+		titleText = fmt.Sprintf("%s %s (%s — %d targets)", arrow, g, state, m.countTargetsInGroup(g))
 	}
-	title := rightPanelTitleStyle.Render(targetName)
+	title := rightPanelTitleStyle.Render(titleText)
 	sep := strings.Repeat("─", m.rightPanelInnerWidth())
 
 	titleBlock := lipgloss.JoinVertical(lipgloss.Left, title, sep)
@@ -1043,7 +1292,10 @@ func (m Model) renderHelp() string {
 			[]entry{
 				{"↑ / k", "move up"},
 				{"↓ / j", "move down"},
-				{"tab", "next target (wrap)"},
+				{"tab", "next row (wrap)"},
+				{"→ / l", "expand folder"},
+				{"← / h", "collapse folder"},
+				{"enter / space", "toggle folder"},
 			},
 		},
 		{
@@ -1148,12 +1400,15 @@ func (m *Model) resizeViewport() {
 }
 
 // loadSelectedLogs replaces the viewport content with the selected target's
-// accumulated log buffer and scrolls to the bottom.
+// accumulated log buffer and scrolls to the bottom.  When a folder row is
+// selected (no target) the viewport is cleared.
 func (m *Model) loadSelectedLogs() {
-	if len(m.targets) == 0 {
+	name := m.selectedTargetName()
+	if name == "" {
+		m.viewport.SetContent("")
+		m.atBottom = true
 		return
 	}
-	name := m.targets[m.selected].Name
 	buf, ok := m.logs[name]
 	if !ok {
 		m.viewport.SetContent("")
@@ -1234,16 +1489,24 @@ func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
 	m.targets = newTargets
 	m.manager.UpdateTargets(newTargets)
 
-	// Adjust selected index if out of bounds.
-	if m.selected >= len(m.targets) {
-		m.selected = len(m.targets) - 1
-		if m.selected < 0 {
-			m.selected = 0
+	// Prune folder-expansion state for groups that no longer exist so the
+	// map does not grow without bound across reloads.
+	liveGroups := make(map[string]bool)
+	for _, t := range m.targets {
+		if t.Group != "" {
+			liveGroups[t.Group] = true
+		}
+	}
+	for g := range m.folderExpanded {
+		if !liveGroups[g] {
+			delete(m.folderExpanded, g)
 		}
 	}
 
+	m.rebuildRows()
+
 	// Refresh the viewport for the current selection.
-	if len(m.targets) > 0 {
+	if len(m.rows) > 0 {
 		m.loadSelectedLogs()
 	}
 
@@ -1253,10 +1516,7 @@ func (m *Model) applyNewTargets(newTargets []config.RunTarget) []tea.Cmd {
 // isOtelSelected reports whether the currently selected target is the
 // virtual otel-errors row.
 func (m *Model) isOtelSelected() bool {
-	if len(m.targets) == 0 {
-		return false
-	}
-	return m.targets[m.selected].Name == otelTargetName
+	return m.selectedTargetName() == otelTargetName
 }
 
 // markOtelSeenIfSelected zeros the unread count and stops the blink when
@@ -1337,10 +1597,13 @@ func (m Model) renderSearchBar() string {
 func (m *Model) updateSearchMatches() {
 	m.searchMatches = nil
 	m.searchMatchIdx = 0
-	if m.searchQuery == "" || len(m.targets) == 0 {
+	if m.searchQuery == "" {
 		return
 	}
-	name := m.targets[m.selected].Name
+	name := m.selectedTargetName()
+	if name == "" {
+		return
+	}
 	buf, ok := m.logs[name]
 	if !ok {
 		return
@@ -1375,10 +1638,10 @@ func (m *Model) nextSearchMatch() {
 // refreshViewportContent re-renders the viewport content in place, preserving
 // the scroll position unless the viewport was at the bottom.
 func (m *Model) refreshViewportContent() {
-	if len(m.targets) == 0 {
+	name := m.selectedTargetName()
+	if name == "" {
 		return
 	}
-	name := m.targets[m.selected].Name
 	buf, ok := m.logs[name]
 	if !ok {
 		return

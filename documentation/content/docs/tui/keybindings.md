@@ -11,11 +11,16 @@ Quick reference for every key recognised by the tukituki TUI. Keys are case-sens
 |-----|--------|
 | `↑` / `k` | Move selection up in the process list. |
 | `↓` / `j` | Move selection down in the process list. |
-| `Tab` | Cycle to the next process (wraps around to the top). |
+| `Tab` | Cycle to the next row (wraps around to the top). |
+| `→` / `l` | Expand the selected folder. |
+| `←` / `h` | Collapse the selected folder, or — when a child target is selected — jump to its folder header and collapse it. |
+| `Enter` / `Space` | Toggle the selected folder between expanded and collapsed. |
 | `PgUp` / `b` | Scroll the log viewport up one page. |
 | `PgDn` / `f` | Scroll the log viewport down one page. |
 
-Both arrow keys and vim-style `j`/`k` move the process selection. Use `Tab` to step forward through the list without leaving the home row.
+Both arrow keys and vim-style `j`/`k` move the row selection. Use `Tab` to step forward through the list without leaving the home row.
+
+The folder keys only act on rows that represent groups (subdirectories of `.run/`); on plain target rows they are silent no-ops. See [Grouping Targets Into Folders]({{< relref "/docs/configuration/run-targets#grouping-targets-into-folders" >}}) for how to create groups.
 
 ## Process Control
 
