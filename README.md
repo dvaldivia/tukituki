@@ -40,6 +40,16 @@ cd tukituki
 go install ./cmd/tukituki/
 ```
 
+The Homebrew formula also installs a short alias, `tktk`, that points at the
+same binary. For `go install` / source builds you can create the alias yourself:
+
+```sh
+ln -s "$(go env GOPATH)/bin/tukituki" "$(go env GOPATH)/bin/tktk"
+```
+
+Anywhere you'd type `tukituki` you can type `tktk`. Help and usage output adapt
+to whichever name you used.
+
 ## Usage
 
 ### Interactive TUI

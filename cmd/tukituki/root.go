@@ -50,6 +50,8 @@ var (
 )
 
 // rootCmd is the base command; when called with no subcommand it starts the TUI.
+// Use is set in init() to the basename of argv[0] so that help/usage output
+// reflects whichever alias (tukituki or tktk) the user invoked.
 var rootCmd = &cobra.Command{
 	Use:   "tukituki",
 	Short: "Manage multiple dev processes from a TUI or headless CLI",
@@ -88,6 +90,14 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	// Reflect the actual invocation name (tukituki or its tktk alias) in
+	// help/usage output, so users see commands they can copy-paste verbatim.
+	if len(os.Args) > 0 {
+		if base := filepath.Base(os.Args[0]); base != "" && base != "." && base != "/" {
+			rootCmd.Use = base
+		}
+	}
 
 	// Persistent flags — available to all subcommands.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",

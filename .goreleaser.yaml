@@ -40,8 +40,10 @@ brews:
     license: "Apache-2.0"
     install: |
       bin.install "tukituki"
+      bin.install_symlink "tukituki" => "tktk"
     test: |
       system "#{bin}/tukituki", "--version"
+      system "#{bin}/tktk", "--version"
 
 changelog:
   sort: asc
