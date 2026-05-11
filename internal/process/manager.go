@@ -139,7 +139,7 @@ func (m *Manager) SetOtelConfig(cfg OtelConfig) {
 		}
 	}
 	if m.previousOtelPort != 0 {
-		fmt.Fprintf(os.Stderr, "otel-errors: previous port %d is no longer available; switching to %d\n", m.previousOtelPort, port)
+		m.appendLogLine(OtelTargetName, fmt.Sprintf("otel-errors: previous port %d is no longer available; switching to %d", m.previousOtelPort, port))
 	}
 	m.otelCfg.Port = port
 	m.saveOtelPort(port)
@@ -188,6 +188,36 @@ func (m *Manager) targetByName(name string) (config.RunTarget, error) {
 		}
 	}
 	return config.RunTarget{}, fmt.Errorf("unknown target: %q", name)
+}
+
+// appendLogLine appends a diagnostic line to the named target's in-memory
+// ring buffer and broadcasts it to active log watchers.  Used in place of
+// os.Stderr writes so the bubbletea alt-screen renderer is never corrupted
+// by inline terminal output from manager goroutines.  Multi-line input is
+// split on newline boundaries so each ring-buffer entry is a single line.
+func (m *Manager) appendLogLine(name, line string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.appendLogLineLocked(name, line)
+}
+
+// appendLogLineLocked is the lock-free variant of appendLogLine.  Callers
+// must already hold m.mu for writing.
+func (m *Manager) appendLogLineLocked(name, line string) {
+	for _, l := range strings.Split(strings.TrimRight(line, "\n"), "\n") {
+		buf := m.logLines[name]
+		buf = append(buf, l)
+		if len(buf) > ringBufferSize {
+			buf = buf[len(buf)-ringBufferSize:]
+		}
+		m.logLines[name] = buf
+		for _, ch := range m.watchers[name] {
+			select {
+			case ch <- l:
+			default:
+			}
+		}
+	}
 }
 
 // Start starts a specific target as a detached background process.
@@ -292,7 +322,7 @@ func (m *Manager) StartTarget(ctx context.Context, target config.RunTarget) erro
 
 	if err := m.st.Save(); err != nil {
 		// Non-fatal — process is running, we just couldn't persist state.
-		fmt.Fprintf(os.Stderr, "warning: save state: %v\n", err)
+		m.appendLogLineLocked(name, fmt.Sprintf("warning: save state: %v", err))
 	}
 
 	// Goroutine that waits for the process to exit and updates state.
@@ -415,21 +445,7 @@ func (m *Manager) startLogTailer(name, logFile string) {
 
 			m.mu.Lock()
 			for _, line := range lines {
-				// Append to ring buffer.
-				buf := m.logLines[name]
-				buf = append(buf, line)
-				if len(buf) > ringBufferSize {
-					buf = buf[len(buf)-ringBufferSize:]
-				}
-				m.logLines[name] = buf
-
-				// Broadcast to subscribers (non-blocking).
-				for _, ch := range m.watchers[name] {
-					select {
-					case ch <- line:
-					default:
-					}
-				}
+				m.appendLogLineLocked(name, line)
 			}
 			m.mu.Unlock()
 		}
@@ -596,7 +612,11 @@ func (m *Manager) runCleanup(name string) {
 			cmd.Dir = workdir
 		}
 		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "cleanup %s: %q: %v\n%s\n", name, cmdStr, err, out)
+			msg := fmt.Sprintf("cleanup %s: %q: %v", name, cmdStr, err)
+			if len(out) > 0 {
+				msg += "\n" + strings.TrimRight(string(out), "\n")
+			}
+			m.appendLogLine(name, msg)
 		}
 	}
 }
@@ -607,7 +627,7 @@ func (m *Manager) StopAll() error {
 	for _, t := range m.targets {
 		if err := m.Stop(t.Name); err != nil {
 			// Log but continue stopping others.
-			fmt.Fprintf(os.Stderr, "stop %s: %v\n", t.Name, err)
+			m.appendLogLine(t.Name, fmt.Sprintf("stop %s: %v", t.Name, err))
 		}
 	}
 	// Also stop the otel-collector if it's running but not in the target
@@ -618,7 +638,7 @@ func (m *Manager) StopAll() error {
 	if hasOtel {
 		os.Remove(m.otelPortFile())
 		if err := m.Stop(OtelTargetName); err != nil {
-			fmt.Fprintf(os.Stderr, "stop %s: %v\n", OtelTargetName, err)
+			m.appendLogLine(OtelTargetName, fmt.Sprintf("stop %s: %v", OtelTargetName, err))
 		}
 	}
 	return nil
@@ -628,7 +648,7 @@ func (m *Manager) StopAll() error {
 func (m *Manager) Restart(ctx context.Context, name string) error {
 	if err := m.Stop(name); err != nil {
 		// If the process wasn't running that's fine — just start it.
-		fmt.Fprintf(os.Stderr, "restart: stop %s: %v\n", name, err)
+		m.appendLogLine(name, fmt.Sprintf("restart: stop %s: %v", name, err))
 	}
 	return m.Start(ctx, name)
 }
@@ -1013,7 +1033,7 @@ func (m *Manager) EnsureOtelCollector(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("otel-errors: previous port %d is no longer available and no alternative could be allocated: %w", originalPort, err)
 		}
-		fmt.Fprintf(os.Stderr, "otel-errors: previous port %d is no longer available; switching to %d\n", originalPort, newPort)
+		m.appendLogLine(OtelTargetName, fmt.Sprintf("otel-errors: previous port %d is no longer available; switching to %d", originalPort, newPort))
 		m.otelCfg.Port = newPort
 		m.saveOtelPort(newPort)
 	}
@@ -1079,9 +1099,9 @@ func (m *Manager) restartRunningOtelTargets(ctx context.Context) {
 	m.mu.RUnlock()
 
 	for _, name := range toRestart {
-		fmt.Fprintf(os.Stderr, "otel-errors: restarting %s to pick up new collector endpoint\n", name)
+		m.appendLogLine(name, fmt.Sprintf("otel-errors: restarting %s to pick up new collector endpoint", name))
 		if err := m.Restart(ctx, name); err != nil {
-			fmt.Fprintf(os.Stderr, "otel-errors: restart %s: %v\n", name, err)
+			m.appendLogLine(name, fmt.Sprintf("otel-errors: restart %s: %v", name, err))
 		}
 	}
 }
