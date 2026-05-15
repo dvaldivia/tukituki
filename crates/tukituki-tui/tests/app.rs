@@ -702,6 +702,68 @@ fn new_lines_at_bottom_do_not_change_scroll() {
 }
 
 #[test]
+fn parsed_buffer_stays_in_sync_with_raw_buffer() {
+    // Both deques must always have the same length so view-time
+    // slicing of `buf.parsed` lines up with `buf.lines` (and
+    // search-match indices, which key off `buf.lines`).
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..50 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    let buf = app.logs.get("a").unwrap();
+    assert_eq!(
+        buf.lines.len(),
+        buf.parsed.len(),
+        "raw/parsed deques out of sync"
+    );
+}
+
+#[test]
+fn parsed_buffer_evicts_alongside_raw_buffer() {
+    // Push more than TUI_RING (10_000) to trigger eviction. Both
+    // deques should cap at the same length, so a slice computed
+    // against `buf.lines.len()` is always valid for `buf.parsed`.
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..10_050 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    let buf = app.logs.get("a").unwrap();
+    assert_eq!(buf.lines.len(), 10_000);
+    assert_eq!(buf.parsed.len(), 10_000);
+}
+
+#[test]
+fn ansi_rich_burst_handled_within_perf_budget() {
+    // Specifically targets osewa-style structured logs: each line
+    // carries ANSI color/style sequences. parse-on-receive moves the
+    // ansi-to-tui cost off the render path; this test pins the
+    // event-handling cost to a sane upper bound (well below the rate
+    // a real backend would emit).
+    //
+    // Format mirrors what zap/logrus/slog produce: bold green
+    // timestamp + colored level + reset + key=value pairs.
+    let ansi_line = "\x1b[32m2026-05-15T20:35:01.123Z\x1b[0m \
+                     \x1b[1;34mINFO\x1b[0m \
+                     handler=http method=POST path=/v1/orders \
+                     status=200 dur=12ms";
+    let mut app = make_app(vec![target("a")]);
+    let start = std::time::Instant::now();
+    let n = 20_000usize;
+    for _ in 0..n {
+        dispatch(&mut app, log("a", ansi_line));
+    }
+    let elapsed = start.elapsed();
+    // 20k ANSI-rich events in well under 2 seconds. On the dev box
+    // this finishes in ~250ms. Flag a 4x regression.
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "20k ANSI lines took {elapsed:?} — parse-on-receive regression?"
+    );
+    let buf = app.logs.get("a").unwrap();
+    assert_eq!(buf.lines.len().min(10_000), buf.parsed.len());
+}
+
+#[test]
 fn handle_chews_through_a_burst_of_log_lines() {
     // Regression guard for the osewa-style freeze: when a backend
     // pours out thousands of log lines, the App's main-loop handler

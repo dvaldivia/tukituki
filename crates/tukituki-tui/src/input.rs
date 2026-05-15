@@ -276,9 +276,7 @@ fn action_restart_all<H: ManagerHandle>(app: &mut App<H>) {
         // Clear the per-target log buffer so restart-all gives a fresh
         // scrollback (matches Go's R behaviour).
         if let Some(buf) = app.logs.get_mut(n) {
-            buf.lines.clear();
-            buf.scroll = 0;
-            buf.at_bottom = true;
+            buf.clear();
         }
         if app.manager.restart(n).is_ok() {
             ok += 1;
@@ -308,9 +306,7 @@ fn action_clear<H: ManagerHandle>(app: &mut App<H>) {
         return;
     };
     if let Some(buf) = app.logs.get_mut(&name) {
-        buf.lines.clear();
-        buf.scroll = 0;
-        buf.at_bottom = true;
+        buf.clear();
     }
     // Match indices point into the buffer we just emptied; drop them
     // so any subsequent jump doesn't land on a nonexistent line.

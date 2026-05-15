@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ansi_to_tui::IntoText;
+use ratatui::text::Line;
 use tukituki_config::{RunTarget, expand_env, load_dotenv, load_targets};
 use tukituki_state::Status;
 
@@ -59,8 +61,20 @@ pub struct App<H: ManagerHandle> {
 }
 
 pub struct LogBuffer {
+    /// Raw line text — kept for search matching (case-insensitive
+    /// `contains`) and as a fallback when ANSI parsing fails.
     pub lines: VecDeque<String>,
-    /// Number of lines scrolled above the visible window. 0 = top.
+    /// Pre-parsed `Line<'static>` for each entry in `lines`.
+    ///
+    /// We parse ANSI escape sequences once on append rather than on
+    /// every render — chatty backends with structured (color-coded)
+    /// logs would otherwise pay multi-millisecond `ansi-to-tui`
+    /// costs at 60fps, which manifests as visible lag the moment the
+    /// user switches targets. With parse-on-receive, rendering is
+    /// just a slice + clone of pre-built `Line` objects.
+    pub parsed: VecDeque<Line<'static>>,
+    /// Number of newer lines hidden below the visible window.
+    /// `scroll == 0` means the viewport is pinned to the bottom.
     pub scroll: usize,
     /// True when the viewport is following the tail; new lines should
     /// keep it pinned to the bottom.
@@ -71,6 +85,7 @@ impl Default for LogBuffer {
     fn default() -> Self {
         Self {
             lines: VecDeque::new(),
+            parsed: VecDeque::new(),
             scroll: 0,
             at_bottom: true,
         }
@@ -83,13 +98,59 @@ impl LogBuffer {
     /// callers can shift any line-index-keyed data structures (e.g.
     /// `App::search_matches`) along with the eviction.
     pub fn push(&mut self, line: String) -> usize {
+        let parsed = parse_log_line(&line);
         self.lines.push_back(line);
+        self.parsed.push_back(parsed);
         if self.lines.len() > TUI_RING {
             self.lines.pop_front();
+            self.parsed.pop_front();
             1
         } else {
             0
         }
+    }
+
+    /// Clear both deques and reset scroll state.
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.parsed.clear();
+        self.scroll = 0;
+        self.at_bottom = true;
+    }
+}
+
+/// Convert a raw log line (possibly containing ANSI escape sequences)
+/// into a styled `Line<'static>`. Owned-input variant of
+/// `IntoText::into_text` so the resulting spans don't borrow from
+/// `line`'s buffer — they end up in `Cow::Owned` form, suitable for
+/// storage in our ring buffer.
+fn parse_log_line(line: &str) -> Line<'static> {
+    // Caller's invariant: incoming lines never contain `\n` (the
+    // tailer splits on newlines before broadcasting). If that
+    // changes, we still produce a single combined Line so the buffer
+    // stays index-aligned with `lines`.
+    let owned: String = line.to_string();
+    match owned.into_text() {
+        Ok(mut text) => {
+            if text.lines.len() == 1 {
+                text.lines.remove(0)
+            } else if text.lines.is_empty() {
+                Line::default()
+            } else {
+                // Defensive: a multi-line parse result gets flattened
+                // back into one Line so `parsed` keeps the same
+                // length as `lines`.
+                let mut spans = Vec::new();
+                for (i, l) in text.lines.into_iter().enumerate() {
+                    if i > 0 {
+                        spans.push(ratatui::text::Span::raw(" "));
+                    }
+                    spans.extend(l.spans);
+                }
+                Line::from(spans)
+            }
+        }
+        Err(_) => Line::from(line.to_string()),
     }
 }
 

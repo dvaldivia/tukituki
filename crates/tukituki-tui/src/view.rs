@@ -4,7 +4,6 @@
 //! line + a horizontal split (sidebar | log pane). Help and Describe
 //! overlays paint over the right pane when active.
 
-use ansi_to_tui::IntoText;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -230,18 +229,21 @@ fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
                 }
                 Text::from(out_lines)
             } else {
-                let joined = buf
-                    .lines
+                // Slice the pre-parsed Lines for the visible window.
+                // ANSI escapes were parsed once when each line was
+                // appended; here we just clone the resulting Spans.
+                // This is the hot path on every frame — keeping it
+                // free of `into_text()` calls is what eliminates the
+                // 60fps × multi-millisecond parse tax on chatty
+                // backends with structured (color-coded) logs.
+                let out_lines: Vec<Line<'static>> = buf
+                    .parsed
                     .iter()
                     .skip(start)
                     .take(end - start)
                     .cloned()
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                joined
-                    .clone()
-                    .into_text()
-                    .unwrap_or_else(|_| Text::raw(joined))
+                    .collect();
+                Text::from(out_lines)
             }
         }
         None => Text::raw(""),
