@@ -141,6 +141,7 @@ pub enum AppEventForTest {
     Key(KeyEvent),
     Tick,
     LogLine { target: String, line: String },
+    ScrollLog(i32),
 }
 
 fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
@@ -150,6 +151,7 @@ fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
         AppEventForTest::LogLine { target, line } => {
             tukituki_tui::test_support::log_line(target, line)
         }
+        AppEventForTest::ScrollLog(d) => tukituki_tui::test_support::scroll_log(d),
     };
     app.handle(real).continue_loop
 }
@@ -804,6 +806,60 @@ fn key_event_always_marks_dirty() {
     app.clear_dirty();
     dispatch(&mut app, key(KeyCode::Down));
     assert!(app.is_dirty(), "Down key must mark dirty");
+}
+
+#[test]
+fn key_event_marks_urgent_to_bypass_frame_budget() {
+    // The decisive fix for "switch-target lag in osewa": key presses
+    // must render immediately, NOT wait out the FRAME_BUDGET rate cap
+    // intended only for log-stream-driven repaints. take_urgent()
+    // returning true is the signal to the render loop that it can
+    // bypass the cap.
+    let mut app = make_app(vec![target("a"), target("b")]);
+    // Drain the initial-render urgency.
+    let _ = app.take_urgent();
+    app.clear_dirty();
+    dispatch(&mut app, key(KeyCode::Down));
+    assert!(
+        app.take_urgent(),
+        "Key event must mark urgent to render without the FRAME_BUDGET delay"
+    );
+    // Second call returns false — it's a take, not a peek.
+    assert!(
+        !app.take_urgent(),
+        "take_urgent must reset the flag after the first read"
+    );
+}
+
+#[test]
+fn log_line_for_selected_target_does_not_mark_urgent() {
+    // LogLine is the one event class the rate cap exists for: chatty
+    // targets emit thousands per second and we WANT 60fps coalescing.
+    // Marking them urgent would defeat the cap.
+    let mut app = make_app(vec![target("a")]);
+    let _ = app.take_urgent();
+    dispatch(&mut app, log("a", "line for selected target"));
+    assert!(
+        !app.take_urgent(),
+        "LogLine must NOT mark urgent — would defeat the rate cap"
+    );
+    // But it does mark dirty (covered by another test) so the render
+    // still happens at the next frame boundary.
+    assert!(app.is_dirty());
+}
+
+#[test]
+fn scroll_log_does_not_mark_urgent() {
+    // Mouse-wheel scrolls fire in dense bursts (a physical wheel tick
+    // can produce dozens of events) and stay rate-limited intentionally.
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "x"));
+    let _ = app.take_urgent();
+    dispatch(&mut app, AppEventForTest::ScrollLog(-1));
+    assert!(
+        !app.take_urgent(),
+        "ScrollLog must NOT mark urgent — would defeat the rate cap under sustained scroll"
+    );
 }
 
 #[test]

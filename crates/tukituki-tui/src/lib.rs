@@ -34,6 +34,9 @@ pub mod test_support {
     pub fn log_line(target: String, line: String) -> AppEvent {
         AppEvent::LogLine { target, line }
     }
+    pub fn scroll_log(delta: i32) -> AppEvent {
+        AppEvent::ScrollLog(delta)
+    }
 }
 
 use std::io;
@@ -179,13 +182,20 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     //
     //   * `next_frame_at` keeps the actual render rate under
     //     1/FRAME_BUDGET. Coalesces bursts on the selected target.
+    //     User-driven events (keys, resizes, file changes, editor
+    //     exits, ticks-that-actually-changed-state) bypass this cap
+    //     via `app.take_urgent()` — the cap exists to throttle log-
+    //     stream-driven repaints, not to delay user input by 16ms.
     let mut next_frame_at = Instant::now();
     let outcome = 'outer: loop {
         let now = Instant::now();
-        if app.is_dirty() && now >= next_frame_at {
-            terminal.draw(|f| view::render(f, &app))?;
-            app.clear_dirty();
-            next_frame_at = now + FRAME_BUDGET;
+        if app.is_dirty() {
+            let urgent = app.take_urgent();
+            if urgent || now >= next_frame_at {
+                terminal.draw(|f| view::render(f, &app))?;
+                app.clear_dirty();
+                next_frame_at = now + FRAME_BUDGET;
+            }
         }
 
         // Wait for the next event. When dirty, time-bound so we wake

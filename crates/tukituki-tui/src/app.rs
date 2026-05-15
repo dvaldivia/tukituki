@@ -60,6 +60,15 @@ pub struct App<H: ManagerHandle> {
     /// repaint.
     dirty: bool,
 
+    /// Subset of `dirty` for changes that should bypass the
+    /// FRAME_BUDGET rate cap entirely — key presses, ticks where the
+    /// status icons actually moved, file-change reloads, terminal
+    /// resizes, external-editor exits. The cap exists to keep log-
+    /// stream-driven renders below 60fps; it has no business
+    /// delaying a key press the user just made by 16ms. Cleared by
+    /// `take_urgent()` after the render fires.
+    urgent: bool,
+
     // Search state — mirrors the Go TUI's `/` flow. `search_matches`
     // holds the indices into the *currently-selected target's*
     // ring buffer that contain `search_query` (case-insensitive).
@@ -203,8 +212,10 @@ impl<H: ManagerHandle> App<H> {
             help_visible: false,
             describe: None,
             last_height: 24,
-            // Start dirty so the first iteration paints the initial frame.
+            // Start dirty + urgent so the first iteration paints the
+            // initial frame without waiting on the rate cap.
             dirty: true,
+            urgent: true,
             search_mode: false,
             search_query: String::new(),
             search_matches: Vec::new(),
@@ -308,20 +319,29 @@ impl<H: ManagerHandle> App<H> {
         self.dirty = false;
     }
 
+    /// Returns the current urgent flag and resets it. Used by the
+    /// render loop to decide whether to bypass the FRAME_BUDGET cap.
+    pub fn take_urgent(&mut self) -> bool {
+        let was = self.urgent;
+        self.urgent = false;
+        was
+    }
+
     pub fn handle(&mut self, ev: AppEvent) -> Continuation {
         match ev {
             AppEvent::Key(k) => {
-                // Every key potentially changes visible state. The
-                // input dispatcher might decide otherwise for some
-                // keys (e.g. a stray key with no binding), but
-                // optimising for that is not worth the complexity —
-                // human key rate is too low to matter.
+                // Every key potentially changes visible state. Mark
+                // dirty AND urgent so the render fires immediately —
+                // the FRAME_BUDGET cap exists to coalesce log floods,
+                // not to delay user input by 16ms.
                 self.dirty = true;
+                self.urgent = true;
                 input::handle_key(self, k)
             }
             AppEvent::Resize(_, h) => {
                 self.last_height = h;
                 self.dirty = true;
+                self.urgent = true;
                 Continuation::cont()
             }
             AppEvent::Tick => {
@@ -333,12 +353,14 @@ impl<H: ManagerHandle> App<H> {
                         self.status_msg.clear();
                     }
                     self.dirty = true;
+                    self.urgent = true;
                 }
                 // Tick is also the canary for status icon changes —
                 // mark dirty only when something actually moved so
                 // 1Hz ticks don't force a render when nothing changed.
                 if prev_statuses != self.statuses {
                     self.dirty = true;
+                    self.urgent = true;
                 }
                 Continuation::cont()
             }
@@ -416,10 +438,17 @@ impl<H: ManagerHandle> App<H> {
                         self.flash("reloaded run files");
                     }
                     self.dirty = true;
+                    self.urgent = true;
                 }
                 Continuation::cont()
             }
             AppEvent::ScrollLog(delta) => {
+                // Mouse-wheel scrolls stay rate-limited intentionally:
+                // they're a high-frequency event class (a single
+                // physical wheel tick can produce dozens of mpsc
+                // events) that the FRAME_BUDGET was designed to
+                // coalesce. Marking them urgent would defeat the cap
+                // under a sustained scroll.
                 self.scroll_log(delta);
                 self.dirty = true;
                 Continuation::cont()
@@ -428,6 +457,7 @@ impl<H: ManagerHandle> App<H> {
                 // Force a re-render; the file change should also have
                 // fired a FileChange so target state will refresh.
                 self.dirty = true;
+                self.urgent = true;
                 Continuation::cont()
             }
         }
