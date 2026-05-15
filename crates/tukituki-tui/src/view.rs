@@ -145,6 +145,22 @@ fn render_row<H: ManagerHandle>(r: &Row, app: &App<H>, is_sel: bool) -> Line<'st
                 Span::styled(padded, label_style),
             ])
         }
+        Row::Separator { label } => {
+            // Dim divider above the virtual-targets cluster — mirrors
+            // the Go TUI's `  ─ collectors ─` line. Never selected
+            // (move_selection skips separators), but render with the
+            // selected style as a defensive fallback.
+            let text = format!("  {label}");
+            let style = if is_sel {
+                theme::selected()
+            } else {
+                theme::key_hint()
+            };
+            Line::from(Span::styled(
+                pad_to(theme::SIDEBAR_WIDTH as usize - 2, &text),
+                style,
+            ))
+        }
     }
 }
 

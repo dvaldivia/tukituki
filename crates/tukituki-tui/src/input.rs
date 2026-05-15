@@ -121,21 +121,53 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
 }
 
 fn move_selection<H: ManagerHandle>(app: &mut App<H>, delta: i32) {
+    use crate::rows::is_selectable;
     if app.rows.is_empty() {
         return;
     }
     let len = app.rows.len() as i32;
-    let new = (app.selected as i32 + delta).clamp(0, len - 1);
-    if new as usize != app.selected {
-        // Search matches are tied to the previously-selected target;
-        // they're meaningless against the new buffer. Match Go's
-        // implicit reset (it stores matches per-target via the
-        // selectedTargetName lookup, which the Rust port collapsed
-        // into a single Vec keyed by the active target).
+    let step = if delta >= 0 { 1 } else { -1 };
+    let mut cur = app.selected as i32;
+    // Walk in `step` steps over rows, skipping non-selectable ones
+    // (separators), advancing `delta` "selectable" hops. Clamp at
+    // either end.
+    let total_hops = delta.unsigned_abs() as i32;
+    let mut hops_done = 0;
+    while hops_done < total_hops {
+        let next = cur + step;
+        if next < 0 || next >= len {
+            break;
+        }
+        cur = next;
+        if is_selectable(&app.rows[cur as usize]) {
+            hops_done += 1;
+        }
+    }
+    // If we ended up parked on an unselectable row (shouldn't happen
+    // for the typical Up/Down case but is possible if we hit the
+    // edge), scan one more step in the same direction to find a
+    // selectable row; if nothing's there, scan the other way.
+    if !is_selectable(&app.rows[cur as usize]) {
+        let nudge = |start: i32, dir: i32| -> Option<i32> {
+            let mut x = start;
+            while x >= 0 && x < len {
+                if is_selectable(&app.rows[x as usize]) {
+                    return Some(x);
+                }
+                x += dir;
+            }
+            None
+        };
+        cur = nudge(cur + step, step)
+            .or_else(|| nudge(cur - step, -step))
+            .unwrap_or(cur);
+    }
+    let new = cur as usize;
+    if new != app.selected {
         if app.search_mode {
             app.reset_search();
         }
-        app.selected = new as usize;
+        app.selected = new;
     }
 }
 

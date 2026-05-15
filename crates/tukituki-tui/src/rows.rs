@@ -24,19 +24,32 @@ pub enum Row {
     /// A target row. `target_idx` indexes into the original target list.
     /// `group` is the folder this target belongs to (`""` = top-level).
     Target { target_idx: usize, group: String },
+    /// Dim divider line above the virtual-targets cluster. The Go TUI
+    /// renders this as `  ─ collectors ─` so the user can tell the
+    /// supervisor-managed entries (currently just `otel-errors`)
+    /// apart from their own `.run/*.yaml` targets.
+    Separator { label: String },
 }
 
 /// Compute the visible row list for the current target set + folder
-/// expansion state. Targets at the top level (`group==""`) are listed
-/// before any folder groups; within each section the order is
-/// preserved from the input slice — which `load_targets` already sorts
-/// by name. Multiple targets sharing the same non-empty group collapse
-/// into a single header (followed by member targets when expanded).
+/// expansion state.
+///
+/// Layout (matches the Go TUI):
+///   1. Top-level (group=="") **non-virtual** targets, original order.
+///   2. Folder groups in alphabetical order, each header followed by
+///      its members when expanded.
+///   3. Virtual targets (e.g. `otel-errors`) clustered at the very
+///      bottom, preceded by a dim `─ collectors ─` separator so the
+///      supervisor-managed entries are visually distinct from
+///      `.run/*.yaml` targets.
 pub fn compute(targets: &[RunTarget], expanded: &BTreeMap<String, bool>) -> Vec<Row> {
     let mut out = Vec::with_capacity(targets.len());
 
-    // Top-level first.
+    // Pass 1: top-level non-virtual targets.
     for (i, t) in targets.iter().enumerate() {
+        if t.is_virtual {
+            continue;
+        }
         if t.group.is_empty() {
             out.push(Row::Target {
                 target_idx: i,
@@ -45,10 +58,13 @@ pub fn compute(targets: &[RunTarget], expanded: &BTreeMap<String, bool>) -> Vec<
         }
     }
 
-    // Then each non-empty group, in alphabetical order for deterministic
-    // rendering. Within a group the original target order is preserved.
+    // Pass 2: folder groups, alphabetical for deterministic rendering.
+    // Within each group the original target order is preserved.
     let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (i, t) in targets.iter().enumerate() {
+        if t.is_virtual {
+            continue;
+        }
         if !t.group.is_empty() {
             groups.entry(t.group.clone()).or_default().push(i);
         }
@@ -70,7 +86,32 @@ pub fn compute(targets: &[RunTarget], expanded: &BTreeMap<String, bool>) -> Vec<
         }
     }
 
+    // Pass 3: virtual targets at the bottom, separator first.
+    let virtuals: Vec<usize> = targets
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.is_virtual)
+        .map(|(i, _)| i)
+        .collect();
+    if !virtuals.is_empty() {
+        out.push(Row::Separator {
+            label: "─ collectors ─".to_string(),
+        });
+        for i in virtuals {
+            out.push(Row::Target {
+                target_idx: i,
+                group: String::new(),
+            });
+        }
+    }
+
     out
+}
+
+/// True if the row is selectable. Separators are skipped by
+/// navigation keys.
+pub fn is_selectable(r: &Row) -> bool {
+    !matches!(r, Row::Separator { .. })
 }
 
 #[cfg(test)]
@@ -179,5 +220,71 @@ mod tests {
             Row::Folder { group, .. } => assert_eq!(group, "zzz"),
             other => panic!("expected zzz folder, got {other:?}"),
         }
+    }
+
+    fn virtual_tg(name: &str) -> RunTarget {
+        RunTarget {
+            name: name.into(),
+            is_virtual: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn virtual_target_pushed_to_bottom_with_separator() {
+        let targets = vec![tg("api", ""), tg("worker", ""), virtual_tg("otel-errors")];
+        let rows = compute(&targets, &BTreeMap::new());
+        // Expected: api, worker, separator, otel-errors.
+        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert!(matches!(&rows[0], Row::Target { target_idx: 0, .. }));
+        assert!(matches!(&rows[1], Row::Target { target_idx: 1, .. }));
+        assert!(matches!(&rows[2], Row::Separator { label } if label.contains("collectors")));
+        assert!(matches!(&rows[3], Row::Target { target_idx: 2, .. }));
+    }
+
+    #[test]
+    fn no_separator_when_no_virtual_targets() {
+        let targets = vec![tg("api", ""), tg("worker", "")];
+        let rows = compute(&targets, &BTreeMap::new());
+        assert!(
+            rows.iter().all(|r| !matches!(r, Row::Separator { .. })),
+            "separator should not appear without a virtual target: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn virtual_target_after_folder_groups() {
+        let targets = vec![
+            tg("api", ""),
+            tg("kb-a", "kb"),
+            tg("kb-b", "kb"),
+            virtual_tg("otel-errors"),
+        ];
+        let mut expanded = BTreeMap::new();
+        expanded.insert("kb".into(), true);
+        let rows = compute(&targets, &expanded);
+        // Last row must be the virtual target.
+        let last = rows.last().expect("non-empty");
+        match last {
+            Row::Target { target_idx, .. } => assert_eq!(*target_idx, 3),
+            other => panic!("last row not the virtual target: {other:?}"),
+        }
+        // The separator sits directly above it.
+        let sep_idx = rows.len() - 2;
+        assert!(matches!(&rows[sep_idx], Row::Separator { .. }));
+    }
+
+    #[test]
+    fn is_selectable_skips_separator() {
+        assert!(!is_selectable(&Row::Separator { label: "x".into() }));
+        assert!(is_selectable(&Row::Target {
+            target_idx: 0,
+            group: String::new()
+        }));
+        assert!(is_selectable(&Row::Folder {
+            group: "x".into(),
+            expanded: false,
+            count: 1
+        }));
     }
 }

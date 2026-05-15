@@ -321,19 +321,32 @@ impl<H: ManagerHandle> App<H> {
         if self.selected >= self.rows.len() {
             self.selected = self.rows.len().saturating_sub(1);
         }
+        // Nudge off a Separator if we landed on one (shouldn't
+        // normally happen, but possible after a reload that removed
+        // the previously-selected target).
+        if let Some(r) = self.rows.get(self.selected)
+            && !crate::rows::is_selectable(r)
+        {
+            for (i, r) in self.rows.iter().enumerate() {
+                if crate::rows::is_selectable(r) {
+                    self.selected = i;
+                    break;
+                }
+            }
+        }
     }
 
     pub fn selected_target_name(&self) -> Option<String> {
         match self.rows.get(self.selected)? {
             Row::Target { target_idx, .. } => self.targets.get(*target_idx).map(|t| t.name.clone()),
-            Row::Folder { .. } => None,
+            Row::Folder { .. } | Row::Separator { .. } => None,
         }
     }
 
     pub fn selected_target(&self) -> Option<&RunTarget> {
         match self.rows.get(self.selected)? {
             Row::Target { target_idx, .. } => self.targets.get(*target_idx),
-            Row::Folder { .. } => None,
+            Row::Folder { .. } | Row::Separator { .. } => None,
         }
     }
 

@@ -99,6 +99,15 @@ fn grouped(name: &str, group: &str) -> RunTarget {
     }
 }
 
+fn virtual_target(name: &str) -> RunTarget {
+    RunTarget {
+        name: name.into(),
+        is_virtual: true,
+        command: "true".into(),
+        ..Default::default()
+    }
+}
+
 fn make_app(targets: Vec<RunTarget>) -> App<FakeManager> {
     App::new(
         targets,
@@ -535,6 +544,36 @@ fn live_log_line_extends_matches_when_search_active() {
     // Another match → appended.
     dispatch(&mut app, log("a", "another match line"));
     assert_eq!(app.search_matches, vec![1, 3]);
+}
+
+#[test]
+fn down_arrow_skips_separator_before_virtual_target() {
+    // Layout: a (sel=0), b (sel=1), separator (sel=2 — unselectable),
+    // otel-errors (sel=3). Down from b must land on otel-errors,
+    // not stop on the separator.
+    let mut app = make_app(vec![
+        target("a"),
+        target("b"),
+        virtual_target("otel-errors"),
+    ]);
+    // Sanity-check the row layout.
+    assert_eq!(app.rows.len(), 4);
+    app.selected = 1; // sitting on "b"
+    dispatch(&mut app, key(KeyCode::Down));
+    assert_eq!(app.selected, 3, "Down from b should land on otel-errors");
+    assert_eq!(app.selected_target_name().as_deref(), Some("otel-errors"));
+}
+
+#[test]
+fn up_arrow_skips_separator_above_virtual_target() {
+    let mut app = make_app(vec![
+        target("a"),
+        target("b"),
+        virtual_target("otel-errors"),
+    ]);
+    app.selected = 3; // otel-errors
+    dispatch(&mut app, key(KeyCode::Up));
+    assert_eq!(app.selected, 1, "Up from otel-errors should land on b");
 }
 
 #[test]
