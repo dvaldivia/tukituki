@@ -156,6 +156,11 @@ jobs:
       sha_darwin_arm64: ${{ steps.sha.outputs.sha_darwin_arm64 }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need full history + tags to diff against the previous
+          # release tag when assembling the commit-list changelog.
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/download-artifact@v4
         with:
@@ -193,6 +198,29 @@ jobs:
         run: |
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Build changelog from commit titles
+        id: changelog
+        shell: bash
+        run: |
+          # The previous tag is whatever `git describe` resolves from
+          # the parent of the current tag. Empty on the very first
+          # release — we then list every commit on the branch.
+          set -euo pipefail
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          {
+            echo 'body<<TUKITUKI_CHANGELOG_EOF'
+            echo "## Changes"
+            echo ""
+            if [[ -n "$PREV" ]]; then
+              git log --no-merges --pretty=format:"- %s (%h)" "${PREV}..${GITHUB_REF_NAME}"
+            else
+              git log --no-merges --pretty=format:"- %s (%h)" "${GITHUB_REF_NAME}"
+            fi
+            echo ""
+            echo ""
+            echo 'TUKITUKI_CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -200,6 +228,10 @@ jobs:
             dist/*.tar.gz
             dist/checksums.txt
           fail_on_unmatched_files: true
+          # `body` is rendered first; `generate_release_notes` appends
+          # GitHub's auto-changelog (the "Full Changelog" comparison
+          # link) below.
+          body: ${{ steps.changelog.outputs.body }}
           generate_release_notes: true
 
   # ------------------------------------------------------------------
