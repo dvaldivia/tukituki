@@ -1,0 +1,33 @@
+[package]
+name = "tukituki"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Terminal UI for managing multiple dev processes"
+
+[[bin]]
+name = "tukituki"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+tabwriter = { workspace = true }
+ctrlc = { workspace = true }
+tukituki-config = { workspace = true }
+tukituki-state = { workspace = true }
+tukituki-process = { workspace = true }
+tukituki-otel = { workspace = true }
+tukituki-tui = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = { workspace = true }
+nix = { workspace = true }

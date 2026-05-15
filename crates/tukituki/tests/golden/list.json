@@ -1,0 +1,27 @@
+[
+  {
+    "name": "api",
+    "command": "sh",
+    "args": [
+      "-c",
+      "sleep 60"
+    ],
+    "description": "HTTP API",
+    "workdir": "backend"
+  },
+  {
+    "name": "kb-acme",
+    "command": "sh",
+    "args": [
+      "-c",
+      "sleep 60"
+    ]
+  },
+  {
+    "name": "worker",
+    "command": "echo",
+    "args": [
+      "hello"
+    ]
+  }
+]

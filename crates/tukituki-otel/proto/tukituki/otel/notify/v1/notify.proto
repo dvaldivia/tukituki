@@ -1,0 +1,25 @@
+// Vendored from internal/otel/notify/notify.proto in the Go tree.
+// Pushed by the otel-collector subprocess to any attached TUI over a
+// Unix domain socket. One stream per subscriber; subscribers fall
+// behind silently rather than blocking the OTLP receive path.
+syntax = "proto3";
+
+package tukituki.otel.notify.v1;
+
+service Notifier {
+  rpc Subscribe(SubscribeRequest) returns (stream ErrorEvent);
+}
+
+message SubscribeRequest {}
+
+message ErrorEvent {
+  // Unix nanoseconds (log record `time_unix_nano`, falling back to
+  // `observed_time_unix_nano`).
+  int64 timestamp_unix_nano = 1;
+  // `service.name` resource attribute, or `"unknown"`.
+  string service_name = 2;
+  // Human-readable severity label (e.g. `"ERROR"`, `"FATAL"`).
+  string severity = 3;
+  // Log record body, stringified.
+  string body = 4;
+}

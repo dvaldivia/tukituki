@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tukituki",
+    "crates/tukituki-config",
+    "crates/tukituki-state",
+    "crates/tukituki-process",
+    "crates/tukituki-otel",
+    "crates/tukituki-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/dvaldivia/tukituki"
+authors = ["Daniel Valdivia"]
+
+[workspace.dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+tempfile = "3"
+nix = { version = "0.30", default-features = false, features = ["signal", "process"] }
+tabwriter = "1"
+ctrlc = "3"
+
+ratatui = "0.30"
+crossterm = "0.29"
+ansi-to-tui = "8"
+notify = { version = "8", default-features = false, features = ["macos_kqueue"] }
+notify-debouncer-mini = { version = "0.7", default-features = false }
+shell-words = "1"
+
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "io-util", "net", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = "0.13"
+tonic-build = "0.13"
+prost = "0.13"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server"] }
+bytes = "1"
+http = "1"
+
+tukituki-config = { path = "crates/tukituki-config" }
+tukituki-state = { path = "crates/tukituki-state" }
+tukituki-process = { path = "crates/tukituki-process" }
+tukituki-otel = { path = "crates/tukituki-otel" }
+tukituki-tui = { path = "crates/tukituki-tui" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

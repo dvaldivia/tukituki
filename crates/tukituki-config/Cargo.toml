@@ -1,0 +1,13 @@
+[package]
+name = "tukituki-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Run-target YAML and .env loading for tukituki"
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml_ng = { workspace = true }

@@ -1,0 +1,12 @@
+// Minimal trace service stub. Same approach as the metrics stub: accept
+// anything, return an empty response, skip unknown fields.
+syntax = "proto3";
+
+package opentelemetry.proto.collector.trace.v1;
+
+service TraceService {
+  rpc Export(ExportTraceServiceRequest) returns (ExportTraceServiceResponse) {}
+}
+
+message ExportTraceServiceRequest {}
+message ExportTraceServiceResponse {}

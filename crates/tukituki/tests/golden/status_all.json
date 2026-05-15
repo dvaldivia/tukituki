@@ -1,0 +1,15 @@
+[
+  {
+    "name": "api",
+    "status": "unknown",
+    "description": "HTTP API"
+  },
+  {
+    "name": "kb-acme",
+    "status": "unknown"
+  },
+  {
+    "name": "worker",
+    "status": "unknown"
+  }
+]

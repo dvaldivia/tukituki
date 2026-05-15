@@ -1,0 +1,44 @@
+# Homebrew formula template for tukituki.
+#
+# `homebrew/render.sh` fills in __VERSION__ and the four __SHA__
+# placeholders, then commits the rendered file to
+# dvaldivia/homebrew-tukituki/Formula/tukituki.rb.
+
+class Tukituki < Formula
+  desc "Terminal UI for managing multiple dev processes"
+  homepage "https://github.com/dvaldivia/tukituki"
+  version "__VERSION__"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/dvaldivia/tukituki/releases/download/v__VERSION__/tukituki_darwin_arm64.tar.gz"
+      sha256 "__SHA_DARWIN_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/dvaldivia/tukituki/releases/download/v__VERSION__/tukituki_darwin_x86_64.tar.gz"
+      sha256 "__SHA_DARWIN_X86_64__"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/dvaldivia/tukituki/releases/download/v__VERSION__/tukituki_linux_arm64.tar.gz"
+      sha256 "__SHA_LINUX_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/dvaldivia/tukituki/releases/download/v__VERSION__/tukituki_linux_x86_64.tar.gz"
+      sha256 "__SHA_LINUX_X86_64__"
+    end
+  end
+
+  def install
+    bin.install "tukituki"
+    bin.install_symlink "tukituki" => "tktk"
+  end
+
+  test do
+    assert_match "tukituki", shell_output("#{bin}/tukituki version")
+    assert_match "tukituki", shell_output("#{bin}/tktk version")
+  end
+end

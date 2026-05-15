@@ -1,0 +1,18 @@
+[package]
+name = "tukituki-process"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Process lifecycle management (spawn, stop, reconcile) for tukituki"
+
+[dependencies]
+chrono = { workspace = true }
+nix = { workspace = true }
+tukituki-config = { workspace = true }
+tukituki-state = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,21 @@
+[package]
+name = "tukituki-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ratatui-based terminal UI for tukituki"
+
+[dependencies]
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+ansi-to-tui = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-mini = { workspace = true }
+chrono = { workspace = true }
+shell-words = { workspace = true }
+tukituki-config = { workspace = true }
+tukituki-state = { workspace = true }
+tukituki-process = { workspace = true }

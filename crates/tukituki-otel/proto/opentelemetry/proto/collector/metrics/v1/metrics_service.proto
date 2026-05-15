@@ -1,0 +1,14 @@
+// Minimal metrics service stub. We accept any payload and discard it —
+// keeping SDKs auto-exporting all signals quiet without dragging in the
+// full metrics proto tree. Unknown fields are skipped by prost on the
+// way in; an empty response goes back.
+syntax = "proto3";
+
+package opentelemetry.proto.collector.metrics.v1;
+
+service MetricsService {
+  rpc Export(ExportMetricsServiceRequest) returns (ExportMetricsServiceResponse) {}
+}
+
+message ExportMetricsServiceRequest {}
+message ExportMetricsServiceResponse {}

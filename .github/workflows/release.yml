@@ -1,0 +1,259 @@
+name: release
+
+# Triggered on semver tag pushes (e.g. `v1.2.3`). Builds tukituki for
+# linux + darwin × x86_64 + arm64, uploads tarballs + checksums to the
+# GitHub Release, and renders the Homebrew formula in
+# dvaldivia/homebrew-tukituki when the HOMEBREW_TAP_GITHUB_TOKEN secret
+# is available.
+#
+# Cross-compilation strategy:
+#   - linux x86_64: native on `ubuntu-latest`.
+#   - linux aarch64: cross-compiled via `cross` (Docker-based).
+#   - darwin x86_64 + darwin aarch64: native + rustup target on
+#     `macos-latest` (which is currently arm64; Xcode's clang
+#     targets either arch).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or commit to build"
+        required: true
+        default: "v0.0.0-dev"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+permissions:
+  contents: write   # release upload
+  id-token: write   # optional: future sigstore signing
+
+jobs:
+  # ------------------------------------------------------------------
+  # Build matrix — one job per target triple.
+  # ------------------------------------------------------------------
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: false
+            os: linux
+            arch: x86_64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+            os: linux
+            arch: arm64
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            cross: false
+            os: darwin
+            arch: x86_64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            cross: false
+            os: darwin
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        # tonic-build calls protoc at build time. Ubuntu's apt protoc is
+        # current enough; on macOS we install via Homebrew (already on
+        # the runner image).
+        run: |
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq protobuf-compiler
+          else
+            brew install protobuf
+          fi
+        shell: bash
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked --version 0.2.5
+
+      - name: Build (cross)
+        if: matrix.cross
+        # The `cross` runner uses a containerized toolchain so the host
+        # protoc isn't visible to tonic-build. The `cross-musl`-style
+        # image we pick has protoc preinstalled; passing
+        # CROSS_CONTAINER_OPTS would let us mount the host one but the
+        # ghcr.io/cross-rs/aarch64-unknown-linux-gnu image already
+        # carries `protobuf-compiler`.
+        run: |
+          export TUKITUKI_VERSION="${GITHUB_REF_NAME#v}"
+          cross build --release --target ${{ matrix.target }} -p tukituki
+
+      - name: Build (native)
+        if: ${{ !matrix.cross }}
+        run: |
+          export TUKITUKI_VERSION="${GITHUB_REF_NAME#v}"
+          cargo build --release --target ${{ matrix.target }} -p tukituki
+
+      - name: Strip + package
+        shell: bash
+        run: |
+          mkdir -p dist
+          BIN_PATH="target/${{ matrix.target }}/release/tukituki"
+          if [[ "${{ matrix.os }}" == "linux" ]]; then
+            strip "$BIN_PATH" || true
+          else
+            # macOS `strip` differs; -x suppresses the harmless warning
+            # about already-stripped symbols.
+            strip -x "$BIN_PATH" || true
+          fi
+          TARBALL="tukituki_${{ matrix.os }}_${{ matrix.arch }}.tar.gz"
+          tar -C "target/${{ matrix.target }}/release" -czf "dist/$TARBALL" tukituki
+          (cd dist && shasum -a 256 "$TARBALL" > "$TARBALL.sha256")
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tukituki-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ------------------------------------------------------------------
+  # Aggregate artifacts → publish GitHub Release.
+  # ------------------------------------------------------------------
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha_linux_x86_64: ${{ steps.sha.outputs.sha_linux_x86_64 }}
+      sha_linux_arm64: ${{ steps.sha.outputs.sha_linux_arm64 }}
+      sha_darwin_x86_64: ${{ steps.sha.outputs.sha_darwin_x86_64 }}
+      sha_darwin_arm64: ${{ steps.sha.outputs.sha_darwin_arm64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten + collect checksums
+        id: sha
+        shell: bash
+        run: |
+          mkdir -p dist
+          # Move every tarball + per-file checksum into dist/.
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.sha256' \) \
+            -exec mv {} dist/ \;
+          (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
+          cat dist/checksums.txt
+          # Surface each tarball's SHA256 as a step output for the
+          # Homebrew formula renderer below.
+          for pair in \
+            "linux_x86_64:linux_x86_64" \
+            "linux_arm64:linux_arm64" \
+            "darwin_x86_64:darwin_x86_64" \
+            "darwin_arm64:darwin_arm64"
+          do
+            key="${pair%%:*}"; suffix="${pair##*:}"
+            f="dist/tukituki_${suffix}.tar.gz"
+            if [[ -f "$f" ]]; then
+              sha=$(shasum -a 256 "$f" | awk '{print $1}')
+              echo "sha_${key}=${sha}" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
+      - name: Meta
+        id: meta
+        shell: bash
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+  # ------------------------------------------------------------------
+  # Render + push the Homebrew formula. Optional: skipped when the
+  # tap-repo token isn't available (forks, dry runs, the very first
+  # release before the tap exists).
+  # ------------------------------------------------------------------
+  homebrew:
+    name: update homebrew tap
+    needs: release
+    # Skip silently when the tap-repo PAT isn't configured — forks and
+    # first-release dry runs shouldn't fail just because the secret is
+    # absent. Maintainers configure HOMEBREW_TAP_GITHUB_TOKEN once on
+    # the dvaldivia/tukituki repo and every subsequent release picks it up.
+    if: ${{ github.repository == 'dvaldivia/tukituki' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tap token
+        id: gate
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -z "${TOKEN:-}" ]]; then
+            echo "::notice::HOMEBREW_TAP_GITHUB_TOKEN not set; skipping tap update."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render formula
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          SHA_LINUX_X86_64: ${{ needs.release.outputs.sha_linux_x86_64 }}
+          SHA_LINUX_ARM64: ${{ needs.release.outputs.sha_linux_arm64 }}
+          SHA_DARWIN_X86_64: ${{ needs.release.outputs.sha_darwin_x86_64 }}
+          SHA_DARWIN_ARM64: ${{ needs.release.outputs.sha_darwin_arm64 }}
+        run: |
+          mkdir -p rendered/Formula
+          ./homebrew/render.sh > rendered/Formula/tukituki.rb
+
+      - name: Push to tap
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${TOKEN}@github.com/dvaldivia/homebrew-tukituki" tap
+          cp rendered/Formula/tukituki.rb tap/Formula/tukituki.rb
+          cd tap
+          git config user.name  "tukituki release bot"
+          git config user.email "tukituki-bot@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Formula already up-to-date for v${VERSION}; nothing to push."
+            exit 0
+          fi
+          git add Formula/tukituki.rb
+          git commit -m "tukituki ${VERSION}"
+          git push

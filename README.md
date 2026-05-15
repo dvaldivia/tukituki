@@ -20,6 +20,8 @@ A terminal UI for managing multiple dev processes. Define your processes in `.ru
 
 ## Installation
 
+Pre-built binaries are published for linux × macOS × x86_64 + arm64.
+
 **Homebrew (macOS and Linux):**
 
 ```sh
@@ -27,28 +29,54 @@ brew tap dvaldivia/tukituki
 brew install tukituki
 ```
 
-**Go install:**
+**Pre-built tarball:**
+
+Download the right archive for your platform from the
+[latest release](https://github.com/dvaldivia/tukituki/releases/latest):
 
 ```sh
-go install github.com/dvaldivia/tukituki/cmd/tukituki@latest
+# Pick your tarball — linux/x86_64, linux/arm64, darwin/x86_64, darwin/arm64
+VERSION=1.0.0
+OS=linux ARCH=x86_64
+curl -sSL -o tukituki.tar.gz \
+  "https://github.com/dvaldivia/tukituki/releases/download/v${VERSION}/tukituki_${OS}_${ARCH}.tar.gz"
+tar -xzf tukituki.tar.gz
+install -m 0755 tukituki /usr/local/bin/tukituki
+ln -sf /usr/local/bin/tukituki /usr/local/bin/tktk
+```
+
+`checksums.txt` in each release covers all four tarballs.
+
+**Cargo install (from source):**
+
+```sh
+cargo install --git https://github.com/dvaldivia/tukituki --tag v1.0.0 tukituki
 ```
 
 **Build from source:**
 
 ```sh
+git clone https://github.com/dvaldivia/tukituki
 cd tukituki
-go install ./cmd/tukituki/
+cargo build --release -p tukituki
+install -m 0755 target/release/tukituki ~/.local/bin/tukituki
 ```
 
 The Homebrew formula also installs a short alias, `tktk`, that points at the
-same binary. For `go install` / source builds you can create the alias yourself:
+same binary. For tarball / cargo / source builds you can create the alias
+yourself:
 
 ```sh
-ln -s "$(go env GOPATH)/bin/tukituki" "$(go env GOPATH)/bin/tktk"
+ln -sf "$(command -v tukituki)" "$(dirname "$(command -v tukituki)")/tktk"
 ```
 
 Anywhere you'd type `tukituki` you can type `tktk`. Help and usage output adapt
 to whichever name you used.
+
+> **Platforms.** Linux and macOS on x86_64 + arm64 are first-class. Windows is
+> not supported — process detachment uses `setsid(2)` and the entire stop /
+> cleanup path signals process groups via `kill(-pid, …)`, which has no native
+> Windows equivalent. WSL works.
 
 ## Usage
 
@@ -96,10 +124,10 @@ tukituki restart api --json
 **`version --json`**
 ```json
 {
-  "version": "1.2.0",
-  "go_version": "go1.24.2",
+  "arch": "arm64",
   "os": "darwin",
-  "arch": "arm64"
+  "runtime": "rustc 1.85.0",
+  "version": "1.2.0"
 }
 ```
 
