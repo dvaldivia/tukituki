@@ -18,6 +18,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # CI installs protoc below, so skip the vendored protobuf-src build.
+  TUKITUKI_USE_SYSTEM_PROTOC: "1"
 
 jobs:
   build-test:
@@ -29,6 +31,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      - name: Install protoc
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq protobuf-compiler
+          else
+            brew install protobuf
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

@@ -27,6 +27,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # CI installs protoc explicitly below, so skip the vendored build
+  # (saves ~90s on every matrix job).
+  TUKITUKI_USE_SYSTEM_PROTOC: "1"
 
 permissions:
   contents: write   # release upload

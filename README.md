@@ -62,6 +62,21 @@ cargo build --release -p tukituki
 install -m 0755 target/release/tukituki ~/.local/bin/tukituki
 ```
 
+> **Source builds vendor `protoc` automatically.** The bundled OpenTelemetry
+> collector compiles its protobufs via `tonic-build` at build time. To avoid
+> making users install a system protobuf-compiler package, the build script
+> uses [`protobuf-src`](https://crates.io/crates/protobuf-src), which downloads
+> and compiles the protobuf C++ source as a build dependency. A C++ toolchain
+> + cmake (both already present on most dev systems — `build-essential` +
+> `cmake` on Debian / Ubuntu, Xcode CLT on macOS) is the only prerequisite.
+>
+> First build takes an extra ~90 s to compile protoc; subsequent rebuilds are
+> incremental. Set `TUKITUKI_USE_SYSTEM_PROTOC=1` if you already have `protoc`
+> on `PATH` and want to skip the vendored build (CI does this).
+>
+> The Homebrew formula and pre-built tarball paths above don't compile
+> anything — the binary they ship is already linked.
+
 The Homebrew formula also installs a short alias, `tktk`, that points at the
 same binary. For tarball / cargo / source builds you can create the alias
 yourself:

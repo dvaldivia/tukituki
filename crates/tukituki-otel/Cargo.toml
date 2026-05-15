@@ -26,6 +26,12 @@ http = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
+# Vendors + builds the `protoc` compiler at first build, so users
+# don't need to install protobuf-compiler on their system before
+# `cargo install` / `cargo build`. Set TUKITUKI_USE_SYSTEM_PROTOC=1
+# to skip the vendored build and fall back to PATH lookup (CI does
+# this to save build time).
+protobuf-src = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
