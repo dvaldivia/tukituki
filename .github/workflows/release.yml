@@ -70,9 +70,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Rust first so any later `brew install` can't corrupt the
+      # pre-installed toolchain on the macOS runner. (Reproducible
+      # failure mode: brew's auto-update during `brew install protobuf`
+      # has overwritten the `cargo` shim with a `rustup-init` stub.)
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
       - name: Install protoc
-        # tonic-build calls protoc at build time on the host (TUKITUKI_USE_SYSTEM_PROTOC=1
-        # is set globally so protobuf-src doesn't recompile it).
+        # tonic-build calls protoc at build time on the host
+        # (TUKITUKI_USE_SYSTEM_PROTOC=1 is set globally so protobuf-src
+        # doesn't recompile it).
+        env:
+          # Don't let brew auto-update its formulae as a side-effect of
+          # installing protobuf — that's the path that corrupts rust.
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
         run: |
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             sudo apt-get update -qq
@@ -87,14 +105,6 @@ jobs:
         shell: bash
         run: |
           sudo apt-get install -y -qq ${{ matrix.apt_cross_pkg }}
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
 
       - name: Build
         shell: bash
