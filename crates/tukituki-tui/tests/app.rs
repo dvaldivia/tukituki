@@ -764,6 +764,62 @@ fn ansi_rich_burst_handled_within_perf_budget() {
 }
 
 #[test]
+fn log_line_for_non_selected_target_does_not_mark_dirty() {
+    // The decisive optimization for "multiple chatty targets" lag:
+    // events buffered into off-screen target buffers must NOT trigger
+    // a re-render. Otherwise the render rate scales with total log
+    // throughput across all targets, not just the visible one.
+    let mut app = make_app(vec![target("a"), target("b")]);
+    app.clear_dirty();
+    assert!(!app.is_dirty());
+    // Selected target is "a" (selected=0). A LogLine for "b" must
+    // buffer without marking dirty.
+    dispatch(&mut app, log("b", "line for unselected target"));
+    assert!(
+        !app.is_dirty(),
+        "LogLine for non-selected target should NOT mark dirty"
+    );
+    // Confirm it actually buffered.
+    assert_eq!(
+        app.logs.get("b").map(|b| b.lines.len()),
+        Some(1),
+        "non-selected LogLine should still be appended to its target's buffer"
+    );
+}
+
+#[test]
+fn log_line_for_selected_target_marks_dirty() {
+    let mut app = make_app(vec![target("a"), target("b")]);
+    app.clear_dirty();
+    dispatch(&mut app, log("a", "line for selected target"));
+    assert!(
+        app.is_dirty(),
+        "LogLine for selected target must mark dirty"
+    );
+}
+
+#[test]
+fn key_event_always_marks_dirty() {
+    let mut app = make_app(vec![target("a"), target("b")]);
+    app.clear_dirty();
+    dispatch(&mut app, key(KeyCode::Down));
+    assert!(app.is_dirty(), "Down key must mark dirty");
+}
+
+#[test]
+fn tick_marks_dirty_only_when_statuses_change() {
+    let mut app = make_app(vec![target("a")]);
+    app.clear_dirty();
+    // Initial statuses == fake's empty map. Tick reads the same
+    // empty map back → no change → no dirty.
+    dispatch(&mut app, AppEventForTest::Tick);
+    assert!(
+        !app.is_dirty(),
+        "tick with no status changes should not mark dirty"
+    );
+}
+
+#[test]
 fn handle_chews_through_a_burst_of_log_lines() {
     // Regression guard for the osewa-style freeze: when a backend
     // pours out thousands of log lines, the App's main-loop handler

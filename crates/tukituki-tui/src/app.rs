@@ -49,6 +49,17 @@ pub struct App<H: ManagerHandle> {
 
     pub last_height: u16,
 
+    /// Set to true by any handler that mutates user-visible state.
+    /// The render loop reads + clears this flag — if no event has
+    /// touched anything the user can see, we skip the entire render
+    /// path including ratatui's frame diff and the stdout flush.
+    /// Decoupling render rate from event rate is what keeps a project
+    /// with many concurrent chatty targets (osewa-style) responsive
+    /// when the user switches to a quiet one: LogLine events for
+    /// non-selected targets buffer silently without triggering a
+    /// repaint.
+    dirty: bool,
+
     // Search state — mirrors the Go TUI's `/` flow. `search_matches`
     // holds the indices into the *currently-selected target's*
     // ring buffer that contain `search_query` (case-insensitive).
@@ -192,6 +203,8 @@ impl<H: ManagerHandle> App<H> {
             help_visible: false,
             describe: None,
             last_height: 24,
+            // Start dirty so the first iteration paints the initial frame.
+            dirty: true,
             search_mode: false,
             search_query: String::new(),
             search_matches: Vec::new(),
@@ -283,25 +296,62 @@ impl<H: ManagerHandle> App<H> {
         }
     }
 
+    /// Has the App's user-visible state changed since the last
+    /// `clear_dirty()`?
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Reset the dirty flag — called by the render loop right after
+    /// a `terminal.draw`.
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
+    }
+
     pub fn handle(&mut self, ev: AppEvent) -> Continuation {
         match ev {
-            AppEvent::Key(k) => input::handle_key(self, k),
+            AppEvent::Key(k) => {
+                // Every key potentially changes visible state. The
+                // input dispatcher might decide otherwise for some
+                // keys (e.g. a stray key with no binding), but
+                // optimising for that is not worth the complexity —
+                // human key rate is too low to matter.
+                self.dirty = true;
+                input::handle_key(self, k)
+            }
             AppEvent::Resize(_, h) => {
                 self.last_height = h;
+                self.dirty = true;
                 Continuation::cont()
             }
             AppEvent::Tick => {
+                let prev_statuses = self.statuses.clone();
                 self.statuses = self.manager.get_all_statuses();
                 if self.status_msg_until_tick > 0 {
                     self.status_msg_until_tick -= 1;
                     if self.status_msg_until_tick == 0 {
                         self.status_msg.clear();
                     }
+                    self.dirty = true;
+                }
+                // Tick is also the canary for status icon changes —
+                // mark dirty only when something actually moved so
+                // 1Hz ticks don't force a render when nothing changed.
+                if prev_statuses != self.statuses {
+                    self.dirty = true;
                 }
                 Continuation::cont()
             }
             AppEvent::LogLine { target, line } => {
                 let is_selected = self.selected_target_name().as_deref() == Some(target.as_str());
+                if is_selected {
+                    // Only mark dirty when the line will actually
+                    // appear on screen. LogLine events for non-
+                    // selected targets buffer silently — this is the
+                    // big win for projects with many concurrent
+                    // chatty targets.
+                    self.dirty = true;
+                }
                 // Push first, then update search bookkeeping (if the
                 // line belongs to the currently selected target). We
                 // capture the new index *before* mutating
@@ -365,16 +415,19 @@ impl<H: ManagerHandle> App<H> {
                     } else {
                         self.flash("reloaded run files");
                     }
+                    self.dirty = true;
                 }
                 Continuation::cont()
             }
             AppEvent::ScrollLog(delta) => {
                 self.scroll_log(delta);
+                self.dirty = true;
                 Continuation::cont()
             }
             AppEvent::EditorDone(_) => {
                 // Force a re-render; the file change should also have
                 // fired a FileChange so target state will refresh.
+                self.dirty = true;
                 Continuation::cont()
             }
         }

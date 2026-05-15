@@ -162,18 +162,47 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // isn't empty on first paint.
     app.backfill_logs();
 
-    // Render → block on first event → drain pending events for up
-    // to FRAME_BUDGET → render again. Under heavy log load this
-    // caps redraws at ~60 fps regardless of inbound rate, and folds
-    // bursts of LogLine events into a single repaint. Key/tick/
-    // file-change events processed in the same drain pass land in
-    // the next render, so quitting / status updates stay snappy.
+    // Event loop. Two coordinating mechanisms:
+    //
+    //   * `app.is_dirty()` — set by handlers when something the user
+    //     can actually see has changed. Renders only happen when
+    //     dirty, so LogLine events for *non-selected* targets buffer
+    //     silently without touching the terminal at all. Huge win
+    //     for projects with many concurrent chatty targets.
+    //
+    //   * Drain prioritisation — non-LogLine events (keys, ticks,
+    //     file changes, etc.) break out of the drain pass so the
+    //     repaint that follows reflects them immediately rather than
+    //     waiting for the rest of any queued log flood. Switching
+    //     targets during a log storm now feels instant: the Key
+    //     handler short-circuits the drain and we render right away.
+    //
+    //   * `next_frame_at` keeps the actual render rate under
+    //     1/FRAME_BUDGET. Coalesces bursts on the selected target.
+    let mut next_frame_at = Instant::now();
     let outcome = 'outer: loop {
-        terminal.draw(|f| view::render(f, &app))?;
+        let now = Instant::now();
+        if app.is_dirty() && now >= next_frame_at {
+            terminal.draw(|f| view::render(f, &app))?;
+            app.clear_dirty();
+            next_frame_at = now + FRAME_BUDGET;
+        }
 
-        let first = match rx.recv() {
+        // Wait for the next event. When dirty, time-bound so we wake
+        // up to render at the next frame boundary; when clean,
+        // a long block is fine (Tick will arrive every second to
+        // refresh status icons regardless).
+        let wait_for = if app.is_dirty() {
+            next_frame_at.saturating_duration_since(Instant::now())
+        } else {
+            Duration::from_secs(1)
+        };
+        let first = match rx.recv_timeout(wait_for.max(Duration::from_millis(1))) {
             Ok(e) => e,
-            Err(_) => break SessionOutcome { stop_all: false },
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                break SessionOutcome { stop_all: false };
+            }
         };
         let cont = app.handle(first);
         if !cont.continue_loop {
@@ -182,15 +211,23 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
             };
         }
 
-        let deadline = Instant::now() + FRAME_BUDGET;
-        while Instant::now() < deadline {
+        // Drain follow-up events with two breakouts: time budget OR
+        // a high-priority (non-LogLine) event. The latter ensures
+        // key presses don't wait out the budget while a log flood
+        // queues up.
+        let drain_deadline = Instant::now() + FRAME_BUDGET;
+        while Instant::now() < drain_deadline {
             match rx.try_recv() {
                 Ok(ev) => {
+                    let is_hi_pri = !matches!(&ev, AppEvent::LogLine { .. });
                     let cont = app.handle(ev);
                     if !cont.continue_loop {
                         break 'outer SessionOutcome {
                             stop_all: cont.stop_all,
                         };
+                    }
+                    if is_hi_pri {
+                        break;
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
