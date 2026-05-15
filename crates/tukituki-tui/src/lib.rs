@@ -40,7 +40,21 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Max number of in-flight events to/from the App's main loop.
+///
+/// Each event is small (a String + a few bytes) so 16 KiB events
+/// ≈ low single-digit MB at worst. Big enough to absorb bursty
+/// stdout from chatty backends; small enough that memory stays
+/// sane under pathological load.
+const APP_CHANNEL_CAPACITY: usize = 16_384;
+
+/// How long the main loop will keep draining events between renders
+/// before forcing a repaint. Targets ~60fps under heavy log load —
+/// a burst of N LogLines is one render, not N. Also caps the worst-
+/// case latency between a key press and a re-render.
+const FRAME_BUDGET: Duration = Duration::from_millis(16);
 
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event as CtEvent, KeyEventKind, MouseEvent,
@@ -77,7 +91,11 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let (tx, rx) = mpsc::channel::<AppEvent>();
+    // Bounded channel. Producers that matter for UX (input, ticks,
+    // file changes) use blocking `send` so they never get dropped.
+    // Log-line pumps use `try_send` and drop lines on overflow —
+    // see the pump spawn below for the rationale.
+    let (tx, rx) = mpsc::sync_channel::<AppEvent>(APP_CHANNEL_CAPACITY);
 
     let manager: std::sync::Arc<H> = std::sync::Arc::new(manager);
 
@@ -107,8 +125,15 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     let reload_tx = tx.clone();
     let _watcher = spawn_fs_watcher(&run_dir, reload_tx).ok();
 
-    // Per-target log pumps. Subscribe once and forward each line as a
-    // LogLine event keyed by target name.
+    // Per-target log pumps. Forward each line from the manager's
+    // subscriber channel as an `AppEvent::LogLine`.
+    //
+    // `try_send` + drop on Full is deliberate: under a log storm, a
+    // chatty target can't backpressure the input thread (whose send
+    // we want to be near-instant). Dropped lines are still reachable
+    // via the manager's 1000-line ring buffer and the on-disk log
+    // file — the user can run `tukituki logs <name>` from another
+    // terminal to see anything missed in real-time here.
     for t in &targets {
         let name = t.name.clone();
         let rx_lines = manager.watch_log_lines(&name);
@@ -117,14 +142,16 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
             .name(format!("tukituki-tui-pump-{name}"))
             .spawn(move || {
                 while let Ok(line) = rx_lines.recv() {
-                    if lines_tx
-                        .send(AppEvent::LogLine {
-                            target: name.clone(),
-                            line,
-                        })
-                        .is_err()
-                    {
-                        return;
+                    let ev = AppEvent::LogLine {
+                        target: name.clone(),
+                        line,
+                    };
+                    match lines_tx.try_send(ev) {
+                        Ok(_) => {}
+                        Err(mpsc::TrySendError::Full(_)) => {
+                            // TUI saturated. Drop the line.
+                        }
+                        Err(mpsc::TrySendError::Disconnected(_)) => return,
                     }
                 }
             })?;
@@ -135,18 +162,42 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // isn't empty on first paint.
     app.backfill_logs();
 
-    let outcome = loop {
+    // Render → block on first event → drain pending events for up
+    // to FRAME_BUDGET → render again. Under heavy log load this
+    // caps redraws at ~60 fps regardless of inbound rate, and folds
+    // bursts of LogLine events into a single repaint. Key/tick/
+    // file-change events processed in the same drain pass land in
+    // the next render, so quitting / status updates stay snappy.
+    let outcome = 'outer: loop {
         terminal.draw(|f| view::render(f, &app))?;
 
-        let ev = match rx.recv() {
+        let first = match rx.recv() {
             Ok(e) => e,
             Err(_) => break SessionOutcome { stop_all: false },
         };
-        let cont = app.handle(ev);
+        let cont = app.handle(first);
         if !cont.continue_loop {
             break SessionOutcome {
                 stop_all: cont.stop_all,
             };
+        }
+
+        let deadline = Instant::now() + FRAME_BUDGET;
+        while Instant::now() < deadline {
+            match rx.try_recv() {
+                Ok(ev) => {
+                    let cont = app.handle(ev);
+                    if !cont.continue_loop {
+                        break 'outer SessionOutcome {
+                            stop_all: cont.stop_all,
+                        };
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    break 'outer SessionOutcome { stop_all: false };
+                }
+            }
         }
     };
 
@@ -158,7 +209,7 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     Ok(outcome)
 }
 
-fn input_loop(tx: mpsc::Sender<AppEvent>) {
+fn input_loop(tx: mpsc::SyncSender<AppEvent>) {
     loop {
         match crossterm::event::read() {
             Ok(CtEvent::Key(k)) if k.kind == KeyEventKind::Press => {
@@ -192,7 +243,7 @@ fn input_loop(tx: mpsc::Sender<AppEvent>) {
 
 fn spawn_fs_watcher(
     run_dir: &std::path::Path,
-    tx: mpsc::Sender<AppEvent>,
+    tx: mpsc::SyncSender<AppEvent>,
 ) -> notify::Result<notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>> {
     let mut debouncer = notify_debouncer_mini::new_debouncer(
         Duration::from_millis(200),

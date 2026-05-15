@@ -702,6 +702,38 @@ fn new_lines_at_bottom_do_not_change_scroll() {
 }
 
 #[test]
+fn handle_chews_through_a_burst_of_log_lines() {
+    // Regression guard for the osewa-style freeze: when a backend
+    // pours out thousands of log lines, the App's main-loop handler
+    // must process them faster than they come in, otherwise the
+    // event queue grows without bound and the TUI stops responding
+    // to keys. 100k LogLine events should take well under a second
+    // on any reasonable hardware — flag if we ever regress 50x.
+    let mut app = make_app(vec![target("a")]);
+    let start = std::time::Instant::now();
+    let pushed = 100_000usize;
+    for i in 0..pushed {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "100k LogLine events took {elapsed:?} — handle() perf regression?"
+    );
+    // Ring buffer caps at TUI_RING (10_000); rest got evicted.
+    let len = app.logs.get("a").unwrap().lines.len();
+    assert!(
+        len > 0 && len <= 10_000,
+        "buffer length out of bounds: {len}"
+    );
+    // The newest line should be the last one we pushed.
+    assert_eq!(
+        app.logs.get("a").unwrap().lines.back().map(|s| s.as_str()),
+        Some(format!("line {}", pushed - 1).as_str())
+    );
+}
+
+#[test]
 fn ctrl_c_still_kills_during_search() {
     let mut app = make_app(vec![target("a")]);
     dispatch(&mut app, key(KeyCode::Char('/')));
