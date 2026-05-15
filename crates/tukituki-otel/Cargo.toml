@@ -14,6 +14,10 @@ path = "examples/otel_emitter.rs"
 
 [dependencies]
 tonic = { workspace = true }
+# tonic 0.14 split out the prost codec into its own crate; the
+# tonic-prost-build-generated client/server stubs reference
+# `tonic_prost::ProstCodec` directly so it has to be a runtime dep too.
+tonic-prost = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -25,7 +29,9 @@ chrono = { workspace = true }
 http = { workspace = true }
 
 [build-dependencies]
-tonic-build = { workspace = true }
+# tonic 0.14 split codec-specific codegen out into tonic-prost-build;
+# we pull that in to compile our protos via prost.
+tonic-prost-build = { workspace = true }
 # Vendors + builds the `protoc` compiler at first build, so users
 # don't need to install protobuf-compiler on their system before
 # `cargo install` / `cargo build`. Set TUKITUKI_USE_SYSTEM_PROTOC=1

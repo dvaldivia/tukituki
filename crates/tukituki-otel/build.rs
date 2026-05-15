@@ -33,7 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // In-house notify socket service.
         "proto/tukituki/otel/notify/v1/notify.proto",
     ];
-    tonic_build::configure()
+    // tonic 0.14 moved prost-based codegen to `tonic-prost-build`;
+    // tonic-build itself is now codec-agnostic. API is otherwise
+    // unchanged.
+    tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
         .compile_protos(&protos, &[proto_root])?;
