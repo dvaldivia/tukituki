@@ -40,6 +40,37 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
         return Continuation::cont();
     }
 
+    // Search mode: every key feeds the query except for the few
+    // controls below. Mirrors Go's `searchMode` branch in model.go.
+    // Ctrl+C is the one universal escape hatch — even mid-search.
+    if app.search_mode {
+        if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
+            return Continuation::kill_all();
+        }
+        match k.code {
+            KeyCode::Esc => app.reset_search(),
+            // Enter and `/` both cycle to the next match (wrap-around).
+            KeyCode::Enter => app.next_search_match(),
+            KeyCode::Char('/') => app.next_search_match(),
+            KeyCode::Backspace => {
+                app.search_query.pop();
+                app.update_search_matches();
+                if !app.search_matches.is_empty() {
+                    app.jump_to_current_match();
+                }
+            }
+            KeyCode::Char(c) => {
+                app.search_query.push(c);
+                app.update_search_matches();
+                if !app.search_matches.is_empty() {
+                    app.jump_to_current_match();
+                }
+            }
+            _ => {}
+        }
+        return Continuation::cont();
+    }
+
     // Quit handling that beats every other binding.
     if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
         return Continuation::kill_all();
@@ -53,6 +84,12 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
 
     match k.code {
         KeyCode::Char('?') => app.help_visible = true,
+        KeyCode::Char('/') => {
+            app.search_mode = true;
+            app.search_query.clear();
+            app.search_matches.clear();
+            app.search_match_idx = 0;
+        }
         KeyCode::Up | KeyCode::Char('k') => move_selection(app, -1),
         KeyCode::Down | KeyCode::Char('j') => move_selection(app, 1),
         KeyCode::Tab => move_selection(app, 1),
@@ -89,7 +126,17 @@ fn move_selection<H: ManagerHandle>(app: &mut App<H>, delta: i32) {
     }
     let len = app.rows.len() as i32;
     let new = (app.selected as i32 + delta).clamp(0, len - 1);
-    app.selected = new as usize;
+    if new as usize != app.selected {
+        // Search matches are tied to the previously-selected target;
+        // they're meaningless against the new buffer. Match Go's
+        // implicit reset (it stores matches per-target via the
+        // selectedTargetName lookup, which the Rust port collapsed
+        // into a single Vec keyed by the active target).
+        if app.search_mode {
+            app.reset_search();
+        }
+        app.selected = new as usize;
+    }
 }
 
 fn expand_folder<H: ManagerHandle>(app: &mut App<H>) {
@@ -210,6 +257,10 @@ fn action_clear<H: ManagerHandle>(app: &mut App<H>) {
         buf.scroll = 0;
         buf.at_bottom = true;
     }
+    // Match indices point into the buffer we just emptied; drop them
+    // so any subsequent jump doesn't land on a nonexistent line.
+    app.search_matches.clear();
+    app.search_match_idx = 0;
     let msg = match app.manager.clear_log(&name) {
         Ok(_) => format!("cleared {name} logs"),
         Err(e) => format!("clear {name}: {e}"),

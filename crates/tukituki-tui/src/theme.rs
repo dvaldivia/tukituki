@@ -61,6 +61,31 @@ pub fn icon_unknown() -> Style {
     Style::default().fg(Color::Rgb(0x78, 0x90, 0x9C))
 }
 
+/// Yellow background — every search-match occurrence on every line.
+pub fn search_match() -> Style {
+    Style::default()
+        .bg(Color::Rgb(0xFF, 0xD6, 0x00))
+        .fg(Color::Rgb(0x00, 0x00, 0x00))
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Orange background — the *current* match the user is parked on.
+/// Cycled by Enter / `/` in search mode.
+pub fn search_current_match() -> Style {
+    Style::default()
+        .bg(Color::Rgb(0xFF, 0x6D, 0x00))
+        .fg(Color::Rgb(0xFF, 0xFF, 0xFF))
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Search bar row — visible at the bottom of the right pane when
+/// `app.search_mode` is on.
+pub fn search_bar() -> Style {
+    Style::default()
+        .bg(Color::Rgb(0x00, 0x4D, 0x40))
+        .fg(Color::Rgb(0xFF, 0xFF, 0xFF))
+}
+
 pub fn status_icon(s: tukituki_state::Status) -> (&'static str, Style) {
     use tukituki_state::Status as S;
     match s {

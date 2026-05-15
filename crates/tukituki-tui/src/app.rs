@@ -46,6 +46,16 @@ pub struct App<H: ManagerHandle> {
     pub describe: Option<String>,
 
     pub last_height: u16,
+
+    // Search state — mirrors the Go TUI's `/` flow. `search_matches`
+    // holds the indices into the *currently-selected target's*
+    // ring buffer that contain `search_query` (case-insensitive).
+    // `search_match_idx` points at the active match within that list;
+    // `nextSearchMatch` wraps around.
+    pub search_mode: bool,
+    pub search_query: String,
+    pub search_matches: Vec<usize>,
+    pub search_match_idx: usize,
 }
 
 pub struct LogBuffer {
@@ -68,10 +78,17 @@ impl Default for LogBuffer {
 }
 
 impl LogBuffer {
-    pub fn push(&mut self, line: String) {
+    /// Append a line, evicting the oldest when the ring is full.
+    /// Returns the number of front-of-buffer lines dropped (0 or 1) so
+    /// callers can shift any line-index-keyed data structures (e.g.
+    /// `App::search_matches`) along with the eviction.
+    pub fn push(&mut self, line: String) -> usize {
         self.lines.push_back(line);
         if self.lines.len() > TUI_RING {
             self.lines.pop_front();
+            1
+        } else {
+            0
         }
     }
 }
@@ -114,7 +131,83 @@ impl<H: ManagerHandle> App<H> {
             help_visible: false,
             describe: None,
             last_height: 24,
+            search_mode: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_match_idx: 0,
         }
+    }
+
+    /// Tear down search state. Called by Esc inside search mode and
+    /// whenever the user switches targets (matches the Go behaviour:
+    /// matches are relative to the current target, so they're stale
+    /// the moment selection moves).
+    pub fn reset_search(&mut self) {
+        self.search_mode = false;
+        self.search_query.clear();
+        self.search_matches.clear();
+        self.search_match_idx = 0;
+    }
+
+    /// Recompute `search_matches` for the current query against the
+    /// selected target's log buffer. Resets `search_match_idx` to 0 so
+    /// the next "jump" goes to the top match.
+    pub fn update_search_matches(&mut self) {
+        self.search_matches.clear();
+        self.search_match_idx = 0;
+        if self.search_query.is_empty() {
+            return;
+        }
+        let Some(name) = self.selected_target_name() else {
+            return;
+        };
+        let Some(buf) = self.logs.get(&name) else {
+            return;
+        };
+        let q = self.search_query.to_lowercase();
+        for (i, line) in buf.lines.iter().enumerate() {
+            if line.to_lowercase().contains(&q) {
+                self.search_matches.push(i);
+            }
+        }
+    }
+
+    /// Advance to the next match (wrapping). No-op when there are
+    /// no matches.
+    pub fn next_search_match(&mut self) {
+        if self.search_matches.is_empty() {
+            return;
+        }
+        self.search_match_idx = (self.search_match_idx + 1) % self.search_matches.len();
+        self.jump_to_current_match();
+    }
+
+    /// Position the log viewport so the current match line is visible
+    /// near the middle. Uses `last_height` as an approximation; if the
+    /// terminal is tiny the math degrades to "match at the bottom".
+    pub fn jump_to_current_match(&mut self) {
+        let Some(name) = self.selected_target_name() else {
+            return;
+        };
+        let Some(match_line) = self.search_matches.get(self.search_match_idx).copied() else {
+            return;
+        };
+        let Some(buf) = self.logs.get_mut(&name) else {
+            return;
+        };
+        let total = buf.lines.len();
+        // Center the match line in a (last_height - 4) tall window.
+        // -4 accounts for header/title/borders. Saturates fine when
+        // the viewport is small.
+        let visible = (self.last_height as usize).saturating_sub(4).max(1);
+        let half = visible / 2;
+        // We want the line `match_line` to sit roughly in the middle of
+        // the visible window. `scroll` counts lines hidden below the
+        // bottom; `end = total - scroll`. Solve for scroll so that
+        // `end ≈ match_line + half + 1`.
+        let target_end = match_line.saturating_add(half + 1).min(total);
+        buf.scroll = total.saturating_sub(target_end);
+        buf.at_bottom = buf.scroll == 0;
     }
 
     /// Seed log buffers from the manager's ring buffer so the right
@@ -147,12 +240,37 @@ impl<H: ManagerHandle> App<H> {
                 Continuation::cont()
             }
             AppEvent::LogLine { target, line } => {
-                let buf = self.logs.entry(target).or_default();
-                buf.push(line);
-                // If the viewport was pinned to the bottom, keep it
-                // there; otherwise leave scroll alone.
-                if !buf.at_bottom {
-                    // Stay where we are — user is reading scrollback.
+                let is_selected = self.selected_target_name().as_deref() == Some(target.as_str());
+                // Push first, then update search bookkeeping (if the
+                // line belongs to the currently selected target). We
+                // capture the new index *before* mutating
+                // `search_matches` so any append below uses the right
+                // line-index in the (possibly post-eviction) buffer.
+                let (dropped, new_index) = {
+                    let buf = self.logs.entry(target).or_default();
+                    let dropped = buf.push(line.clone());
+                    (dropped, buf.lines.len().saturating_sub(1))
+                };
+
+                if is_selected && self.search_mode && !self.search_query.is_empty() {
+                    if dropped > 0 {
+                        let mut adjusted = Vec::with_capacity(self.search_matches.len());
+                        for idx in &self.search_matches {
+                            if let Some(new) = idx.checked_sub(dropped) {
+                                adjusted.push(new);
+                            }
+                        }
+                        if self.search_match_idx >= adjusted.len() {
+                            self.search_match_idx = 0;
+                        }
+                        self.search_matches = adjusted;
+                    }
+                    if line
+                        .to_lowercase()
+                        .contains(&self.search_query.to_lowercase())
+                    {
+                        self.search_matches.push(new_index);
+                    }
                 }
                 Continuation::cont()
             }

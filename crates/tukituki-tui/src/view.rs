@@ -155,9 +155,19 @@ fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    // Reserve the bottom row for the search bar when active.
+    let body_constraints: Vec<Constraint> = if app.search_mode {
+        vec![
+            Constraint::Length(1), // title
+            Constraint::Min(1),    // log body
+            Constraint::Length(1), // search bar
+        ]
+    } else {
+        vec![Constraint::Length(1), Constraint::Min(1)]
+    };
     let split = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .constraints(body_constraints)
         .split(inner);
     let title_area = split[0];
     let body_area = split[1];
@@ -171,28 +181,39 @@ fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
         title_area,
     );
 
-    // Pull the buffer and slice the visible window. The slice is the
-    // *bottom* `body_area.height` lines minus the scroll offset.
     let lines: Text<'static> = match app.selected_target_name().and_then(|n| app.logs.get(&n)) {
         Some(buf) => {
             let height = body_area.height as usize;
             let total = buf.lines.len();
-            // When buf.scroll == 0 the user is pinned at the bottom;
-            // otherwise scroll counts how many lines from the bottom
-            // we've scrolled up.
             let end = total.saturating_sub(buf.scroll);
             let start = end.saturating_sub(height.max(1));
-            // Concatenate into a single ANSI-parsed Text so colours
-            // survive into the render.
-            let joined = buf
-                .lines
-                .iter()
-                .skip(start)
-                .take(end - start)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n");
-            joined.into_text().unwrap_or_else(|_| Text::raw(joined))
+
+            if app.search_mode && !app.search_query.is_empty() {
+                // Span-by-span rendering so search hits get a background
+                // colour without losing ANSI fidelity on the rest of
+                // the line. The line containing the active match is
+                // tinted with the accent colour.
+                let current_line_idx = app.search_matches.get(app.search_match_idx).copied();
+                let mut out_lines: Vec<Line<'static>> = Vec::with_capacity(end - start);
+                for (i, line) in buf.lines.iter().enumerate().skip(start).take(end - start) {
+                    let is_current = current_line_idx == Some(i);
+                    out_lines.push(highlight_line(line, &app.search_query, is_current));
+                }
+                Text::from(out_lines)
+            } else {
+                let joined = buf
+                    .lines
+                    .iter()
+                    .skip(start)
+                    .take(end - start)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                joined
+                    .clone()
+                    .into_text()
+                    .unwrap_or_else(|_| Text::raw(joined))
+            }
         }
         None => Text::raw(""),
     };
@@ -202,6 +223,68 @@ fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
         p = p.wrap(Wrap { trim: false });
     }
     f.render_widget(p, body_area);
+
+    if app.search_mode {
+        let bar_area = split[2];
+        let count = if app.search_matches.is_empty() {
+            if app.search_query.is_empty() {
+                "0".to_string()
+            } else {
+                "no matches".to_string()
+            }
+        } else {
+            format!("{}/{}", app.search_match_idx + 1, app.search_matches.len())
+        };
+        let bar = Line::from(Span::styled(
+            format!(
+                " /{}  [{count}]  (Enter=next, Esc=close) ",
+                app.search_query
+            ),
+            theme::search_bar(),
+        ));
+        f.render_widget(Paragraph::new(bar), bar_area);
+    }
+}
+
+/// Wrap every case-insensitive occurrence of `query` in `line` with
+/// the appropriate highlight style. The current-match line uses the
+/// accent colour; other matched lines use the regular highlight.
+fn highlight_line(line: &str, query: &str, is_current: bool) -> Line<'static> {
+    if query.is_empty() {
+        return Line::from(line.to_string());
+    }
+    let lower_line = line.to_lowercase();
+    let lower_q = query.to_lowercase();
+    let qlen = lower_q.len();
+
+    let style = if is_current {
+        theme::search_current_match()
+    } else {
+        theme::search_match()
+    };
+
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut offset = 0usize;
+    while offset < line.len() {
+        match lower_line[offset..].find(&lower_q) {
+            None => {
+                spans.push(Span::raw(line[offset..].to_string()));
+                break;
+            }
+            Some(rel) => {
+                let abs = offset + rel;
+                if abs > offset {
+                    spans.push(Span::raw(line[offset..abs].to_string()));
+                }
+                // Original-case slice for the highlighted span so users
+                // see the actual log content, not a lowercased copy.
+                let end = abs + qlen;
+                spans.push(Span::styled(line[abs..end].to_string(), style));
+                offset = end;
+            }
+        }
+    }
+    Line::from(spans)
 }
 
 fn render_help_overlay(f: &mut Frame, area: Rect) {
@@ -229,6 +312,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
         Line::from("   PgDn / f       scroll down"),
         Line::from("   w              toggle line wrap"),
         Line::from("   z              zoom (full-width logs)"),
+        Line::from("   /              search logs (Enter cycles next, Esc closes)"),
         Line::from(""),
         Line::from(" Exit:"),
         Line::from("   q              detach (leave procs running)"),

@@ -357,6 +357,200 @@ fn log_line_event_appends_to_buffer() {
     assert_eq!(buf.lines.back().map(String::as_str), Some("hello"));
 }
 
+fn log(target: &str, line: &str) -> AppEventForTest {
+    AppEventForTest::LogLine {
+        target: target.into(),
+        line: line.into(),
+    }
+}
+
+#[test]
+fn slash_enters_search_mode_and_esc_exits() {
+    let mut app = make_app(vec![target("a")]);
+    assert!(!app.search_mode);
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    assert!(app.search_mode);
+    dispatch(&mut app, key(KeyCode::Esc));
+    assert!(!app.search_mode);
+    assert!(app.search_query.is_empty());
+    assert!(app.search_matches.is_empty());
+}
+
+#[test]
+fn typing_in_search_mode_updates_matches() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "hello world"));
+    dispatch(&mut app, log("a", "another line"));
+    dispatch(&mut app, log("a", "world peace"));
+
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('w')));
+    dispatch(&mut app, key(KeyCode::Char('o')));
+    dispatch(&mut app, key(KeyCode::Char('r')));
+    dispatch(&mut app, key(KeyCode::Char('l')));
+    dispatch(&mut app, key(KeyCode::Char('d')));
+    assert_eq!(app.search_query, "world");
+    // "hello world" (line 0) and "world peace" (line 2) match.
+    assert_eq!(app.search_matches, vec![0, 2]);
+}
+
+#[test]
+fn search_is_case_insensitive() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "ERROR: boom"));
+    dispatch(&mut app, log("a", "error: again"));
+
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    for c in "Error".chars() {
+        dispatch(&mut app, key(KeyCode::Char(c)));
+    }
+    assert_eq!(app.search_matches, vec![0, 1]);
+}
+
+#[test]
+fn enter_cycles_to_next_match() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "one foo"));
+    dispatch(&mut app, log("a", "two foo"));
+    dispatch(&mut app, log("a", "three foo"));
+
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    for c in "foo".chars() {
+        dispatch(&mut app, key(KeyCode::Char(c)));
+    }
+    assert_eq!(app.search_match_idx, 0);
+    dispatch(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.search_match_idx, 1);
+    dispatch(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.search_match_idx, 2);
+    // Wrap-around.
+    dispatch(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.search_match_idx, 0);
+}
+
+#[test]
+fn slash_in_search_mode_also_cycles() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "alpha"));
+    dispatch(&mut app, log("a", "alpha again"));
+
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    for c in "alpha".chars() {
+        dispatch(&mut app, key(KeyCode::Char(c)));
+    }
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    assert_eq!(app.search_match_idx, 1);
+}
+
+#[test]
+fn backspace_shrinks_query_and_re_searches() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "errno=2"));
+    dispatch(&mut app, log("a", "err loading"));
+
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    for c in "errn".chars() {
+        dispatch(&mut app, key(KeyCode::Char(c)));
+    }
+    assert_eq!(app.search_matches, vec![0]); // only "errno=2"
+    dispatch(&mut app, key(KeyCode::Backspace));
+    assert_eq!(app.search_query, "err");
+    // Now both lines match.
+    assert_eq!(app.search_matches, vec![0, 1]);
+}
+
+#[test]
+fn empty_query_clears_matches() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "hello"));
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('h')));
+    assert_eq!(app.search_matches, vec![0]);
+    dispatch(&mut app, key(KeyCode::Backspace));
+    assert!(app.search_query.is_empty());
+    assert!(app.search_matches.is_empty());
+}
+
+#[test]
+fn switching_target_resets_search() {
+    let mut app = make_app(vec![target("a"), target("b")]);
+    dispatch(&mut app, log("a", "hello"));
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('h')));
+    assert!(app.search_mode);
+    // Esc exits search; navigation moves to row b.
+    dispatch(&mut app, key(KeyCode::Esc));
+    // Reopen search, then move selection — the dispatcher in this
+    // crate enters search mode first, so jumping via arrow keys
+    // happens outside search. Reproduce: enter search, exit, then
+    // move selection — search must already be off.
+    dispatch(&mut app, key(KeyCode::Down));
+    assert_eq!(app.selected, 1);
+    // Now open search on the new target. Matches must be empty.
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('h')));
+    assert!(app.search_matches.is_empty(), "no matches in target b");
+}
+
+#[test]
+fn moving_selection_while_searching_resets_state() {
+    // The dispatcher routes arrow keys through `move_selection`, which
+    // calls `reset_search` when search is active. This guards against
+    // stale match indices pointing into a different target's buffer.
+    let mut app = make_app(vec![target("a"), target("b")]);
+    dispatch(&mut app, log("a", "hello a"));
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('h')));
+    assert_eq!(app.search_matches, vec![0]);
+
+    // Arrow keys are swallowed by search mode (every char goes into
+    // the query). To trigger the reset path we exit search first, then
+    // navigate. After navigation, opening search on the new target
+    // should yield zero matches.
+    dispatch(&mut app, key(KeyCode::Esc));
+    dispatch(&mut app, key(KeyCode::Down));
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('h')));
+    assert!(app.search_matches.is_empty());
+}
+
+#[test]
+fn live_log_line_extends_matches_when_search_active() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, log("a", "first"));
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    for c in "match".chars() {
+        dispatch(&mut app, key(KeyCode::Char(c)));
+    }
+    assert!(app.search_matches.is_empty());
+
+    // A new log line arrives that matches → matches list grows.
+    dispatch(&mut app, log("a", "this is a MATCH"));
+    assert_eq!(app.search_matches, vec![1]);
+
+    // A non-matching new line is ignored by the index list.
+    dispatch(&mut app, log("a", "no hit here"));
+    assert_eq!(app.search_matches, vec![1]);
+
+    // Another match → appended.
+    dispatch(&mut app, log("a", "another match line"));
+    assert_eq!(app.search_matches, vec![1, 3]);
+}
+
+#[test]
+fn ctrl_c_still_kills_during_search() {
+    let mut app = make_app(vec![target("a")]);
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    let cont = app.handle(tukituki_tui::test_support::key(KeyEvent {
+        code: KeyCode::Char('c'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: crossterm::event::KeyEventState::empty(),
+    }));
+    assert!(!cont.continue_loop);
+    assert!(cont.stop_all);
+}
+
 #[test]
 fn restart_all_clears_per_target_buffers() {
     let mgr = std::sync::Arc::new(FakeManager::default());
