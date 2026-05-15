@@ -249,6 +249,22 @@ impl<H: ManagerHandle> App<H> {
                 let (dropped, new_index) = {
                     let buf = self.logs.entry(target).or_default();
                     let dropped = buf.push(line.clone());
+                    // When the user is scrolled up reading older logs
+                    // (at_bottom=false), bump `scroll` to keep their
+                    // reading position stable as new lines arrive at
+                    // the bottom. With `scroll` measured from the
+                    // bottom, an appended line shifts that bottom
+                    // forward by 1 — so without a compensating bump
+                    // the viewport would drift "forward in history"
+                    // every time a line lands. Ring-buffer eviction
+                    // pulls the bottom-anchor back by 1, so the net
+                    // adjustment is `1 - dropped`.
+                    if !buf.at_bottom {
+                        let adj = 1usize.saturating_sub(dropped);
+                        if adj > 0 {
+                            buf.scroll = (buf.scroll + adj).min(buf.lines.len());
+                        }
+                    }
                     (dropped, buf.lines.len().saturating_sub(1))
                 };
 
@@ -361,17 +377,21 @@ impl<H: ManagerHandle> App<H> {
             return;
         };
         let buf = self.logs.entry(name).or_default();
-        if delta > 0 {
-            // Scrolling down — toward newest. If we hit the bottom,
-            // re-pin.
-            let max = buf.lines.len();
-            let new = (buf.scroll + delta as usize).min(max);
-            buf.scroll = new;
-            // at_bottom is reset on render once it knows window size.
-        } else {
-            let amt = (-delta) as usize;
-            buf.scroll = buf.scroll.saturating_sub(amt);
+        // `buf.scroll` = number of newer lines hidden below the viewport.
+        //   scroll=0 → viewport is pinned at the bottom (newest line).
+        //   scroll=N → viewport's bottom edge is N lines back from newest.
+        // So PgUp (`delta < 0`, scroll toward older) INCREASES scroll;
+        // PgDn (`delta > 0`, scroll toward newer) DECREASES scroll.
+        if delta < 0 {
+            let amt = delta.unsigned_abs() as usize;
+            // Cap so we can't scroll past the first line in the buffer.
+            buf.scroll = (buf.scroll + amt).min(buf.lines.len());
             buf.at_bottom = false;
+        } else if delta > 0 {
+            buf.scroll = buf.scroll.saturating_sub(delta as usize);
+            if buf.scroll == 0 {
+                buf.at_bottom = true;
+            }
         }
     }
 }

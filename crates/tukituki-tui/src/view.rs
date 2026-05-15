@@ -165,37 +165,50 @@ fn render_row<H: ManagerHandle>(r: &Row, app: &App<H>, is_sel: bool) -> Line<'st
 }
 
 fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(theme::border());
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    // Reserve the bottom row for the search bar when active.
-    let body_constraints: Vec<Constraint> = if app.search_mode {
-        vec![
-            Constraint::Length(1), // title
-            Constraint::Min(1),    // log body
-            Constraint::Length(1), // search bar
-        ]
+    // Zoom mode hides the panel border and the title row so the user's
+    // text selection covers nothing but real log content — copies
+    // cleanly into the clipboard. The 'z' key handler also disables
+    // mouse capture so the terminal owns selection.
+    let inner = if app.zoom_logs {
+        area
     } else {
-        vec![Constraint::Length(1), Constraint::Min(1)]
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme::border());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        inner
     };
+
+    // Layout: title row (skipped in zoom) + log body + optional search bar.
+    let mut constraints: Vec<Constraint> = Vec::new();
+    if !app.zoom_logs {
+        constraints.push(Constraint::Length(1)); // title
+    }
+    constraints.push(Constraint::Min(1)); // body
+    if app.search_mode {
+        constraints.push(Constraint::Length(1)); // search bar
+    }
     let split = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(body_constraints)
+        .constraints(constraints)
         .split(inner);
-    let title_area = split[0];
-    let body_area = split[1];
-
-    let title = match app.selected_target() {
-        Some(t) => format!(" {} ", t.name),
-        None => " (no target selected) ".into(),
+    let (title_area, body_area, search_idx) = if app.zoom_logs {
+        (None, split[0], 1usize)
+    } else {
+        (Some(split[0]), split[1], 2usize)
     };
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(title, theme::right_panel_title()))),
-        title_area,
-    );
+
+    if let Some(title_area) = title_area {
+        let title = match app.selected_target() {
+            Some(t) => format!(" {} ", t.name),
+            None => " (no target selected) ".into(),
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(title, theme::right_panel_title()))),
+            title_area,
+        );
+    }
 
     let lines: Text<'static> = match app.selected_target_name().and_then(|n| app.logs.get(&n)) {
         Some(buf) => {
@@ -241,7 +254,9 @@ fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
     f.render_widget(p, body_area);
 
     if app.search_mode {
-        let bar_area = split[2];
+        // `search_idx` was computed above and accounts for the
+        // missing title row in zoom mode.
+        let bar_area = split[search_idx];
         let count = if app.search_matches.is_empty() {
             if app.search_query.is_empty() {
                 "0".to_string()

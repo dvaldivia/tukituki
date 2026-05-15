@@ -577,6 +577,131 @@ fn up_arrow_skips_separator_above_virtual_target() {
 }
 
 #[test]
+fn page_up_increases_scroll_offset() {
+    // `buf.scroll` counts newer lines hidden below the viewport, so
+    // PgUp (scrolling toward older logs) must INCREASE scroll. The
+    // first cut of this code had the directions inverted — pressing
+    // PgDn pinned the user to the top of the buffer.
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..50 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    assert_eq!(
+        app.logs.get("a").unwrap().scroll,
+        0,
+        "starts pinned to bottom"
+    );
+    assert!(app.logs.get("a").unwrap().at_bottom);
+
+    dispatch(&mut app, key(KeyCode::PageUp));
+    let scroll_after_pgup = app.logs.get("a").unwrap().scroll;
+    assert!(
+        scroll_after_pgup > 0,
+        "PgUp should move scroll up from 0; got {scroll_after_pgup}"
+    );
+    assert!(!app.logs.get("a").unwrap().at_bottom);
+}
+
+#[test]
+fn page_down_decreases_scroll_offset() {
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..50 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    // Pump the user up into history.
+    for _ in 0..3 {
+        dispatch(&mut app, key(KeyCode::PageUp));
+    }
+    let scroll_after_pgup = app.logs.get("a").unwrap().scroll;
+    assert!(scroll_after_pgup > 0);
+
+    dispatch(&mut app, key(KeyCode::PageDown));
+    let scroll_after_pgdn = app.logs.get("a").unwrap().scroll;
+    assert!(
+        scroll_after_pgdn < scroll_after_pgup,
+        "PgDn should bring scroll closer to 0; was {scroll_after_pgup}, now {scroll_after_pgdn}"
+    );
+}
+
+#[test]
+fn page_down_pinned_at_bottom_does_not_underflow() {
+    // Starting at scroll=0 (bottom), PgDn should be a no-op rather
+    // than walking into negative scroll territory.
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..10 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    let before = app.logs.get("a").unwrap().scroll;
+    dispatch(&mut app, key(KeyCode::PageDown));
+    let after = app.logs.get("a").unwrap().scroll;
+    assert_eq!(before, 0);
+    assert_eq!(after, 0);
+    assert!(app.logs.get("a").unwrap().at_bottom);
+}
+
+#[test]
+fn page_up_clamps_at_buffer_start() {
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..5 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    // Page up far more than the buffer holds.
+    for _ in 0..20 {
+        dispatch(&mut app, key(KeyCode::PageUp));
+    }
+    let scroll = app.logs.get("a").unwrap().scroll;
+    assert!(
+        scroll <= 5,
+        "scroll should clamp at buffer length (5), got {scroll}"
+    );
+}
+
+#[test]
+fn new_lines_while_scrolled_up_keep_reading_position_stable() {
+    // The user pages up to look at older logs. As new lines stream in
+    // at the bottom, their reading position should stay anchored —
+    // not drift forward in history under their cursor.
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..30 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    dispatch(&mut app, key(KeyCode::PageUp));
+    dispatch(&mut app, key(KeyCode::PageUp));
+    let scroll_before = app.logs.get("a").unwrap().scroll;
+    assert!(scroll_before > 0, "should be scrolled up");
+
+    // Three new lines arrive (no eviction — ring isn't full).
+    for i in 30..33 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    let scroll_after = app.logs.get("a").unwrap().scroll;
+    // For every new line, scroll bumps by 1 so the absolute line we
+    // were reading stays in the same place on screen.
+    assert_eq!(
+        scroll_after,
+        scroll_before + 3,
+        "scroll must compensate for appended lines"
+    );
+}
+
+#[test]
+fn new_lines_at_bottom_do_not_change_scroll() {
+    let mut app = make_app(vec![target("a")]);
+    for i in 0..10 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    assert_eq!(app.logs.get("a").unwrap().scroll, 0);
+    for i in 10..15 {
+        dispatch(&mut app, log("a", &format!("line {i}")));
+    }
+    assert_eq!(
+        app.logs.get("a").unwrap().scroll,
+        0,
+        "at_bottom=true means scroll stays at 0 as new lines arrive"
+    );
+}
+
+#[test]
 fn ctrl_c_still_kills_during_search() {
     let mut app = make_app(vec![target("a")]);
     dispatch(&mut app, key(KeyCode::Char('/')));

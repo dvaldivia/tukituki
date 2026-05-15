@@ -110,7 +110,30 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
         }
         KeyCode::Char('z') => {
             app.zoom_logs = !app.zoom_logs;
-            app.flash(if app.zoom_logs { "zoom on" } else { "zoom off" });
+            // Drop mouse capture in zoom mode so the terminal's
+            // native text-selection (drag-to-select, double-click,
+            // etc.) works again — copying log output is the whole
+            // reason to be in zoom mode. Re-enable when zooming out.
+            // The view-side change (no border) lives in view.rs.
+            //
+            // IsTerminal guard: in tests we drive `App::handle`
+            // synthetically without a real terminal, so emitting
+            // crossterm escape sequences here would pollute test
+            // stdout. Skip when we aren't attached to a TTY.
+            use std::io::IsTerminal;
+            if std::io::stdout().is_terminal() {
+                use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+                let _ = if app.zoom_logs {
+                    crossterm::execute!(std::io::stdout(), DisableMouseCapture)
+                } else {
+                    crossterm::execute!(std::io::stdout(), EnableMouseCapture)
+                };
+            }
+            app.flash(if app.zoom_logs {
+                "zoom on (mouse off, select-to-copy enabled)"
+            } else {
+                "zoom off"
+            });
         }
         KeyCode::Char('D') => action_describe(app),
         KeyCode::Char('E') => action_edit(app),
