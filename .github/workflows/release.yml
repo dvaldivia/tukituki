@@ -8,7 +8,9 @@ name: release
 #
 # Cross-compilation strategy:
 #   - linux x86_64: native on `ubuntu-latest`.
-#   - linux aarch64: cross-compiled via `cross` (Docker-based).
+#   - linux aarch64: cross-compiled with the apt `gcc-aarch64-linux-gnu`
+#     toolchain (avoids the `cross` Docker image, whose Ubuntu 16.04
+#     base ships GCC 5 and can't build protobuf-src's abseil dep).
 #   - darwin x86_64 + darwin aarch64: native + rustup target on
 #     `macos-latest` (which is currently arm64; Xcode's clang
 #     targets either arch).
@@ -48,31 +50,29 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            cross: false
             os: linux
             arch: x86_64
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
-            cross: true
             os: linux
             arch: arm64
+            cross_linker: aarch64-linux-gnu-gcc
+            cross_strip: aarch64-linux-gnu-strip
+            apt_cross_pkg: gcc-aarch64-linux-gnu
           - target: x86_64-apple-darwin
             runner: macos-latest
-            cross: false
             os: darwin
             arch: x86_64
           - target: aarch64-apple-darwin
             runner: macos-latest
-            cross: false
             os: darwin
             arch: arm64
     steps:
       - uses: actions/checkout@v4
 
       - name: Install protoc
-        # tonic-build calls protoc at build time. Ubuntu's apt protoc is
-        # current enough; on macOS we install via Homebrew (already on
-        # the runner image).
+        # tonic-build calls protoc at build time on the host (TUKITUKI_USE_SYSTEM_PROTOC=1
+        # is set globally so protobuf-src doesn't recompile it).
         run: |
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             sudo apt-get update -qq
@@ -82,6 +82,12 @@ jobs:
           fi
         shell: bash
 
+      - name: Install cross toolchain (linux arm64)
+        if: matrix.apt_cross_pkg
+        shell: bash
+        run: |
+          sudo apt-get install -y -qq ${{ matrix.apt_cross_pkg }}
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -90,24 +96,12 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install cross
-        if: matrix.cross
-        run: cargo install cross --locked --version 0.2.5
-
-      - name: Build (cross)
-        if: matrix.cross
-        # The `cross` runner uses a containerized toolchain so the host
-        # protoc isn't visible to tonic-build. The `cross-musl`-style
-        # image we pick has protoc preinstalled; passing
-        # CROSS_CONTAINER_OPTS would let us mount the host one but the
-        # ghcr.io/cross-rs/aarch64-unknown-linux-gnu image already
-        # carries `protobuf-compiler`.
-        run: |
-          export TUKITUKI_VERSION="${GITHUB_REF_NAME#v}"
-          cross build --release --target ${{ matrix.target }} -p tukituki
-
-      - name: Build (native)
-        if: ${{ !matrix.cross }}
+      - name: Build
+        shell: bash
+        env:
+          # Tell cargo which linker to use for the ARM64 Linux target.
+          # No-op for native builds (env vars for other targets are unread).
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
         run: |
           export TUKITUKI_VERSION="${GITHUB_REF_NAME#v}"
           cargo build --release --target ${{ matrix.target }} -p tukituki
@@ -117,11 +111,12 @@ jobs:
         run: |
           mkdir -p dist
           BIN_PATH="target/${{ matrix.target }}/release/tukituki"
-          if [[ "${{ matrix.os }}" == "linux" ]]; then
+          # ARM64 ELFs need the arch-aware strip; macOS uses BSD strip.
+          if [[ -n "${{ matrix.cross_strip }}" ]]; then
+            ${{ matrix.cross_strip }} "$BIN_PATH" || true
+          elif [[ "${{ matrix.os }}" == "linux" ]]; then
             strip "$BIN_PATH" || true
           else
-            # macOS `strip` differs; -x suppresses the harmless warning
-            # about already-stripped symbols.
             strip -x "$BIN_PATH" || true
           fi
           TARBALL="tukituki_${{ matrix.os }}_${{ matrix.arch }}.tar.gz"
