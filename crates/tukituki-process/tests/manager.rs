@@ -90,6 +90,40 @@ fn dump_log_writes_child_output() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn spawned_child_stdin_is_null_not_inherited() {
+    // Regression guard for the "tmux pane becomes super-slow after
+    // detach" bug. Children must NOT inherit the parent's stdin
+    // (which under tmux is the pane's PTY) — otherwise every backend
+    // is blocked on read(0) against the user's terminal after detach
+    // and the kernel wakes them all up on every keystroke. The shell
+    // prints what `/proc/$$/fd/0` resolves to; we expect /dev/null,
+    // not /dev/pts/<N> or any inherited PTY.
+    let target = RunTarget {
+        name: "stdin-check".into(),
+        command: "sh".into(),
+        args: vec!["-c".into(), "readlink /proc/$$/fd/0".into()],
+        ..Default::default()
+    };
+    let (_dir, m) = new_test_manager(vec![target]);
+    m.start("stdin-check").expect("start");
+    thread::sleep(Duration::from_millis(400));
+
+    let dest_dir = tempfile::tempdir().unwrap();
+    let dest = dest_dir.path().join("dump.log");
+    m.dump_log("stdin-check", &dest).expect("dump_log");
+    let data = fs::read_to_string(&dest).unwrap();
+    assert!(
+        data.contains("/dev/null"),
+        "spawned child's fd 0 should be /dev/null, got: {data:?}"
+    );
+    assert!(
+        !data.contains("/dev/pts/"),
+        "spawned child's fd 0 must not be a PTY (would freeze tmux post-detach): {data:?}"
+    );
+}
+
+#[test]
 fn attach_to_existing_reconciles_alive() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".tukituki");

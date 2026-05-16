@@ -13,7 +13,7 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -405,6 +405,15 @@ impl Manager {
             // the other in the child.
             let stderr_file = log_file.try_clone()?;
             cmd.stdout(log_file).stderr(stderr_file);
+            // Stdin must NOT inherit from the parent — `std::process::
+            // Command`'s default is Stdio::inherit(), which would leave
+            // every spawned backend holding an open fd to the user's
+            // terminal (a tmux pane PTY when run under tmux). After
+            // detach, those backends keep that fd; every keystroke into
+            // the now-shared PTY wakes every blocked `read(0)` across
+            // them (thundering herd), which manifests as severe input
+            // lag in the tmux pane. Pipe to /dev/null instead.
+            cmd.stdin(Stdio::null());
 
             // Workdir resolution: absolute as-is, relative joined with
             // project_root.
