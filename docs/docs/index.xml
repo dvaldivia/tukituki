@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tukituki – Documentation</title>
-    <link>https://dvaldivia.github.io/tukituki/docs/</link>
+    <link>http://localhost:1313/tukituki/docs/</link>
     <description>Recent content in Documentation on tukituki</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     
-	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="http://localhost:1313/tukituki/docs/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Cleanup Commands</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/guides/cleanup/</link>
+      <link>http://localhost:1313/tukituki/docs/guides/cleanup/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/guides/cleanup/</guid>
+      <guid>http://localhost:1313/tukituki/docs/guides/cleanup/</guid>
       <description>
         
         
@@ -195,10 +195,10 @@
     
     <item>
       <title>Headless Mode</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/cli/headless/</link>
+      <link>http://localhost:1313/tukituki/docs/cli/headless/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/cli/headless/</guid>
+      <guid>http://localhost:1313/tukituki/docs/cli/headless/</guid>
       <description>
         
         
@@ -518,10 +518,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Installation</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</link>
+      <link>http://localhost:1313/tukituki/docs/getting-started/installation/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/getting-started/installation/</guid>
+      <guid>http://localhost:1313/tukituki/docs/getting-started/installation/</guid>
       <description>
         
         
@@ -631,10 +631,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Keybindings Reference</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</link>
+      <link>http://localhost:1313/tukituki/docs/tui/keybindings/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</guid>
+      <guid>http://localhost:1313/tukituki/docs/tui/keybindings/</guid>
       <description>
         
         
@@ -683,7 +683,7 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
   &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;p&gt;Both arrow keys and vim-style &lt;code&gt;j&lt;/code&gt;/&lt;code&gt;k&lt;/code&gt; move the row selection. Use &lt;code&gt;Tab&lt;/code&gt; to step forward through the list without leaving the home row.&lt;/p&gt;
-&lt;p&gt;The folder keys only act on rows that represent groups (subdirectories of &lt;code&gt;.run/&lt;/code&gt;); on plain target rows they are silent no-ops. See &lt;a href=&#34;https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/#grouping-targets-into-folders&#34;&gt;Grouping Targets Into Folders&lt;/a&gt; for how to create groups.&lt;/p&gt;
+&lt;p&gt;The folder keys only act on rows that represent groups (subdirectories of &lt;code&gt;.run/&lt;/code&gt;); on plain target rows they are silent no-ops. See &lt;a href=&#34;http://localhost:1313/tukituki/docs/configuration/run-targets/#grouping-targets-into-folders&#34;&gt;Grouping Targets Into Folders&lt;/a&gt; for how to create groups.&lt;/p&gt;
 &lt;h2&gt;Process Control&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;process-control&#34;&gt;&lt;/span&gt;
     &lt;a href=&#34;#process-control&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
   &lt;thead&gt;
@@ -788,10 +788,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Run Target Reference</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</link>
+      <link>http://localhost:1313/tukituki/docs/configuration/run-targets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/</guid>
+      <guid>http://localhost:1313/tukituki/docs/configuration/run-targets/</guid>
       <description>
         
         
@@ -833,7 +833,7 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
 &lt;li&gt;Targets inside a subdirectory are loaded and started exactly like top-level targets — grouping is purely a display concern.&lt;/li&gt;
 &lt;li&gt;In the TUI each group is rendered as a single folder row (&lt;code&gt;▶ kb (3)&lt;/code&gt;). The arrow points &lt;strong&gt;right&lt;/strong&gt; when collapsed and &lt;strong&gt;down&lt;/strong&gt; when expanded (&lt;code&gt;▼ kb (3)&lt;/code&gt;).&lt;/li&gt;
 &lt;li&gt;Folders are &lt;strong&gt;collapsed by default&lt;/strong&gt;, so a project with many group members has the same visual footprint as one with a single row per group.&lt;/li&gt;
-&lt;li&gt;Expand or collapse a folder with &lt;code&gt;→&lt;/code&gt;/&lt;code&gt;l&lt;/code&gt; or &lt;code&gt;←&lt;/code&gt;/&lt;code&gt;h&lt;/code&gt; while it is selected, or press &lt;code&gt;Enter&lt;/code&gt;/&lt;code&gt;Space&lt;/code&gt; to toggle it. See the &lt;a href=&#34;https://dvaldivia.github.io/tukituki/docs/tui/keybindings/&#34;&gt;TUI keybindings reference&lt;/a&gt; for the full list.&lt;/li&gt;
+&lt;li&gt;Expand or collapse a folder with &lt;code&gt;→&lt;/code&gt;/&lt;code&gt;l&lt;/code&gt; or &lt;code&gt;←&lt;/code&gt;/&lt;code&gt;h&lt;/code&gt; while it is selected, or press &lt;code&gt;Enter&lt;/code&gt;/&lt;code&gt;Space&lt;/code&gt; to toggle it. See the &lt;a href=&#34;http://localhost:1313/tukituki/docs/tui/keybindings/&#34;&gt;TUI keybindings reference&lt;/a&gt; for the full list.&lt;/li&gt;
 &lt;li&gt;Only one level of nesting is honoured. Files in &lt;code&gt;.run/foo/bar/*.yaml&lt;/code&gt; are ignored. Hidden subdirectories (those whose name starts with &lt;code&gt;.&lt;/code&gt;) are skipped.&lt;/li&gt;
 &lt;li&gt;The headless CLI (&lt;code&gt;tukituki list&lt;/code&gt;, &lt;code&gt;start&lt;/code&gt;, &lt;code&gt;stop&lt;/code&gt;, etc.) is unaffected — it operates on target &lt;strong&gt;names&lt;/strong&gt; and ignores group membership entirely.&lt;/li&gt;
 &lt;/ul&gt;
@@ -911,7 +911,7 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
           &lt;td&gt;bool&lt;/td&gt;
           &lt;td&gt;no&lt;/td&gt;
           &lt;td&gt;&lt;code&gt;false&lt;/code&gt;&lt;/td&gt;
-          &lt;td&gt;Enable OpenTelemetry log collection. When &lt;code&gt;true&lt;/code&gt;, tukituki injects &lt;code&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/code&gt; into the process and starts a bundled OTLP receiver. See the &lt;a href=&#34;https://dvaldivia.github.io/tukituki/docs/guides/opentelemetry/&#34;&gt;OpenTelemetry guide&lt;/a&gt;.&lt;/td&gt;
+          &lt;td&gt;Enable OpenTelemetry log collection. When &lt;code&gt;true&lt;/code&gt;, tukituki injects &lt;code&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/code&gt; into the process and starts a bundled OTLP receiver. See the &lt;a href=&#34;http://localhost:1313/tukituki/docs/guides/opentelemetry/&#34;&gt;OpenTelemetry guide&lt;/a&gt;.&lt;/td&gt;
       &lt;/tr&gt;
   &lt;/tbody&gt;
 &lt;/table&gt;
@@ -1038,10 +1038,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Config File &amp; Flags</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</link>
+      <link>http://localhost:1313/tukituki/docs/configuration/config-file/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/configuration/config-file/</guid>
+      <guid>http://localhost:1313/tukituki/docs/configuration/config-file/</guid>
       <description>
         
         
@@ -1165,10 +1165,10 @@ frontend    running   React dev server&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;d
     
     <item>
       <title>Quick Start</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</link>
+      <link>http://localhost:1313/tukituki/docs/getting-started/quick-start/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/getting-started/quick-start/</guid>
+      <guid>http://localhost:1313/tukituki/docs/getting-started/quick-start/</guid>
       <description>
         
         
@@ -1292,10 +1292,10 @@ Press **`Q`** (capital Q) or **`Ctrl+C`** to stop all managed processes and exit
     
     <item>
       <title>State &amp; Log Persistence</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/guides/state-persistence/</link>
+      <link>http://localhost:1313/tukituki/docs/guides/state-persistence/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/guides/state-persistence/</guid>
+      <guid>http://localhost:1313/tukituki/docs/guides/state-persistence/</guid>
       <description>
         
         
@@ -1464,10 +1464,10 @@ Press **`Q`** (capital Q) or **`Ctrl+C`** to stop all managed processes and exit
     
     <item>
       <title>OpenTelemetry Error Collection</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/guides/opentelemetry/</link>
+      <link>http://localhost:1313/tukituki/docs/guides/opentelemetry/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/guides/opentelemetry/</guid>
+      <guid>http://localhost:1313/tukituki/docs/guides/opentelemetry/</guid>
       <description>
         
         

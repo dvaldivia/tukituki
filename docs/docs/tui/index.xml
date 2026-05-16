@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tukituki – TUI Guide</title>
-    <link>https://dvaldivia.github.io/tukituki/docs/tui/</link>
+    <link>http://localhost:1313/tukituki/docs/tui/</link>
     <description>Recent content in TUI Guide on tukituki</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     
-	  <atom:link href="https://dvaldivia.github.io/tukituki/docs/tui/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="http://localhost:1313/tukituki/docs/tui/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Keybindings Reference</title>
-      <link>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</link>
+      <link>http://localhost:1313/tukituki/docs/tui/keybindings/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>https://dvaldivia.github.io/tukituki/docs/tui/keybindings/</guid>
+      <guid>http://localhost:1313/tukituki/docs/tui/keybindings/</guid>
       <description>
         
         
@@ -68,7 +68,7 @@
   &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;p&gt;Both arrow keys and vim-style &lt;code&gt;j&lt;/code&gt;/&lt;code&gt;k&lt;/code&gt; move the row selection. Use &lt;code&gt;Tab&lt;/code&gt; to step forward through the list without leaving the home row.&lt;/p&gt;
-&lt;p&gt;The folder keys only act on rows that represent groups (subdirectories of &lt;code&gt;.run/&lt;/code&gt;); on plain target rows they are silent no-ops. See &lt;a href=&#34;https://dvaldivia.github.io/tukituki/docs/configuration/run-targets/#grouping-targets-into-folders&#34;&gt;Grouping Targets Into Folders&lt;/a&gt; for how to create groups.&lt;/p&gt;
+&lt;p&gt;The folder keys only act on rows that represent groups (subdirectories of &lt;code&gt;.run/&lt;/code&gt;); on plain target rows they are silent no-ops. See &lt;a href=&#34;http://localhost:1313/tukituki/docs/configuration/run-targets/#grouping-targets-into-folders&#34;&gt;Grouping Targets Into Folders&lt;/a&gt; for how to create groups.&lt;/p&gt;
 &lt;h2&gt;Process Control&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;process-control&#34;&gt;&lt;/span&gt;
     &lt;a href=&#34;#process-control&#34; class=&#34;subheading-anchor&#34; aria-label=&#34;Permalink for this section&#34;&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
   &lt;thead&gt;
