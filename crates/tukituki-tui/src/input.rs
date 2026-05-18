@@ -341,7 +341,14 @@ fn action_edit<H: ManagerHandle>(app: &mut App<H>) {
         return;
     }
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-    // Leave alt screen / raw mode, run editor synchronously, restore.
+
+    // Tell the input reader thread to stop consuming stdin before we
+    // tear down raw mode — otherwise it and the editor child race for
+    // every keystroke on the same PTY fd and the editor feels laggy.
+    // Also drop mouse capture: `LeaveAlternateScreen` doesn't undo it
+    // and the editor would otherwise see CSI mouse sequences as input.
+    app.set_input_paused(true);
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
     let _ = crossterm::terminal::disable_raw_mode();
     let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 
@@ -355,6 +362,13 @@ fn action_edit<H: ManagerHandle>(app: &mut App<H>) {
 
     let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen);
     let _ = crossterm::terminal::enable_raw_mode();
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture);
+    app.set_input_paused(false);
+    // EnterAlternateScreen lands us on a freshly-cleared alt screen,
+    // but ratatui still thinks its pre-editor frame is on the wire.
+    // Without this nudge the next draw would only emit diffs and the
+    // rest of the UI would stay blank.
+    app.mark_full_redraw();
 
     match status {
         Ok(_) => app.flash(&format!("edited {source}")),

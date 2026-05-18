@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use ansi_to_tui::IntoText;
 use ratatui::text::Line;
@@ -78,6 +79,22 @@ pub struct App<H: ManagerHandle> {
     pub search_query: String,
     pub search_matches: Vec<usize>,
     pub search_match_idx: usize,
+
+    /// Set to true while $EDITOR is running so the input reader thread
+    /// stops calling `crossterm::event::read()` and leaves stdin to the
+    /// editor. Without this the parent's reader and the editor child
+    /// race for each keystroke on the same PTY fd — the user sees the
+    /// editor as sluggish because roughly half the keys are consumed
+    /// by crossterm and dropped on the floor here.
+    input_paused: Arc<AtomicBool>,
+
+    /// Set by handlers that left the terminal in a state ratatui's
+    /// diff renderer can't reconcile — e.g. after an external editor
+    /// exits and `EnterAlternateScreen` returns us to a freshly-cleared
+    /// alt screen while ratatui still believes its last buffer is on
+    /// the wire. The main loop reads + clears this and forces a
+    /// `terminal.clear()` before the next draw so every cell repaints.
+    force_full_redraw: bool,
 }
 
 pub struct LogBuffer {
@@ -220,7 +237,41 @@ impl<H: ManagerHandle> App<H> {
             search_query: String::new(),
             search_matches: Vec::new(),
             search_match_idx: 0,
+            input_paused: Arc::new(AtomicBool::new(false)),
+            force_full_redraw: false,
         }
+    }
+
+    /// Signal that ratatui's previous-buffer state is stale (e.g. an
+    /// external editor swapped screens out from under us) and the next
+    /// frame must repaint every cell, not just the diff.
+    pub fn mark_full_redraw(&mut self) {
+        self.force_full_redraw = true;
+        self.dirty = true;
+        self.urgent = true;
+    }
+
+    /// Read + reset the full-redraw flag. The main loop calls this
+    /// right before `terminal.draw` and `terminal.clear()`s when set.
+    pub fn take_full_redraw(&mut self) -> bool {
+        let was = self.force_full_redraw;
+        self.force_full_redraw = false;
+        was
+    }
+
+    /// A clone of the shared "pause the input reader" flag. The TUI's
+    /// input thread reads this each iteration; `action_edit` flips it
+    /// to true around the `$EDITOR` invocation.
+    pub fn input_paused_handle(&self) -> Arc<AtomicBool> {
+        self.input_paused.clone()
+    }
+
+    /// Pause/resume the crossterm input reader thread. Pause before
+    /// shelling out to any process that needs stdin (`$EDITOR`);
+    /// resume immediately after it exits.
+    pub fn set_input_paused(&self, paused: bool) {
+        self.input_paused
+            .store(paused, std::sync::atomic::Ordering::Release);
     }
 
     /// Tear down search state. Called by Esc inside search mode and

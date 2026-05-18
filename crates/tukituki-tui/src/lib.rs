@@ -102,12 +102,21 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
 
     let manager: std::sync::Arc<H> = std::sync::Arc::new(manager);
 
-    // Spawn the input reader thread. It blocks on crossterm::event::read
-    // and forwards keys/resizes/mouse to the app loop.
+    // Build the App first so the input reader thread can share its
+    // `input_paused` flag — `action_edit` flips that flag while
+    // `$EDITOR` runs so the editor child isn't fighting the reader
+    // for stdin on the same PTY fd.
+    let mut app = App::new(targets, manager, run_dir.clone(), project_root);
+    let input_paused = app.input_paused_handle();
+
+    // Spawn the input reader thread. Polls crossterm and forwards
+    // keys/resizes/mouse to the app loop — but yields stdin entirely
+    // while `input_paused` is set so external processes (the editor)
+    // can read it without contention.
     let input_tx = tx.clone();
     let _input_handle = thread::Builder::new()
         .name("tukituki-tui-input".into())
-        .spawn(move || input_loop(input_tx))?;
+        .spawn(move || input_loop(input_tx, input_paused))?;
 
     // Status tick every second so PID liveness + reaper-driven status
     // changes propagate to the sidebar without a key press.
@@ -137,9 +146,9 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // via the manager's 1000-line ring buffer and the on-disk log
     // file — the user can run `tukituki logs <name>` from another
     // terminal to see anything missed in real-time here.
-    for t in &targets {
+    for t in &app.targets {
         let name = t.name.clone();
-        let rx_lines = manager.watch_log_lines(&name);
+        let rx_lines = app.manager.watch_log_lines(&name);
         let lines_tx = tx.clone();
         thread::Builder::new()
             .name(format!("tukituki-tui-pump-{name}"))
@@ -159,8 +168,6 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
                 }
             })?;
     }
-
-    let mut app = App::new(targets, manager, run_dir, project_root);
     // Backfill ring-buffer history into the TUI buffer so the right pane
     // isn't empty on first paint.
     app.backfill_logs();
@@ -192,6 +199,16 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
         if app.is_dirty() {
             let urgent = app.take_urgent();
             if urgent || now >= next_frame_at {
+                // After `$EDITOR` exits we re-enter the alt screen,
+                // which most terminals clear. ratatui's internal
+                // previous-buffer still holds the pre-editor frame,
+                // so a normal `draw` would only diff in the cells
+                // that actually changed (e.g. a flash message) and
+                // leave the rest invisible. `clear()` resets that
+                // assumption so the next draw repaints every cell.
+                if app.take_full_redraw() {
+                    terminal.clear()?;
+                }
                 terminal.draw(|f| view::render(f, &app))?;
                 app.clear_dirty();
                 next_frame_at = now + FRAME_BUDGET;
@@ -256,33 +273,66 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     Ok(outcome)
 }
 
-fn input_loop(tx: mpsc::SyncSender<AppEvent>) {
+fn input_loop(
+    tx: mpsc::SyncSender<AppEvent>,
+    paused: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::sync::atomic::Ordering;
+
+    // Poll cadence while idle. Bounds how quickly the reader notices
+    // the editor finishing — keystrokes themselves still arrive with
+    // no extra latency because `poll` returns immediately when an
+    // event is ready, well before this timeout.
+    const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+    // Sleep cadence while paused. Same trade-off in reverse: bounds
+    // first-keystroke latency after the editor exits.
+    const PAUSED_SLEEP: Duration = Duration::from_millis(50);
+
     loop {
-        match crossterm::event::read() {
-            Ok(CtEvent::Key(k)) if k.kind == KeyEventKind::Press => {
-                if tx.send(AppEvent::Key(k)).is_err() {
-                    return;
+        if paused.load(Ordering::Acquire) {
+            // Editor (or other foreground tool) owns the PTY. Don't
+            // touch stdin — even `event::read()` of one byte that the
+            // editor needed would corrupt its input stream.
+            thread::sleep(PAUSED_SLEEP);
+            continue;
+        }
+        match crossterm::event::poll(POLL_TIMEOUT) {
+            Ok(false) => continue,
+            Ok(true) => {
+                // Re-check after poll: if the main thread flipped
+                // `paused` between our last check and now, leave the
+                // pending byte in stdin so the editor reads it.
+                if paused.load(Ordering::Acquire) {
+                    continue;
+                }
+                match crossterm::event::read() {
+                    Ok(CtEvent::Key(k)) if k.kind == KeyEventKind::Press => {
+                        if tx.send(AppEvent::Key(k)).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(CtEvent::Resize(w, h)) => {
+                        if tx.send(AppEvent::Resize(w, h)).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(CtEvent::Mouse(MouseEvent { kind, .. })) => {
+                        use crossterm::event::MouseEventKind as Mk;
+                        let scroll = match kind {
+                            Mk::ScrollUp => Some(-3),
+                            Mk::ScrollDown => Some(3),
+                            _ => None,
+                        };
+                        if let Some(d) = scroll
+                            && tx.send(AppEvent::ScrollLog(d)).is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(_) => return,
                 }
             }
-            Ok(CtEvent::Resize(w, h)) => {
-                if tx.send(AppEvent::Resize(w, h)).is_err() {
-                    return;
-                }
-            }
-            Ok(CtEvent::Mouse(MouseEvent { kind, .. })) => {
-                use crossterm::event::MouseEventKind as Mk;
-                let scroll = match kind {
-                    Mk::ScrollUp => Some(-3),
-                    Mk::ScrollDown => Some(3),
-                    _ => None,
-                };
-                if let Some(d) = scroll
-                    && tx.send(AppEvent::ScrollLog(d)).is_err()
-                {
-                    return;
-                }
-            }
-            Ok(_) => {}
             Err(_) => return,
         }
     }
