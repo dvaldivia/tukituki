@@ -64,7 +64,7 @@ fn render_header<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
         Span::raw(" "),
         Span::styled(msg, theme::header_hint()),
     ]);
-    f.render_widget(Paragraph::new(line), area);
+    f.render_widget(Paragraph::new(line).style(theme::header()), area);
 }
 
 fn render_sidebar<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
