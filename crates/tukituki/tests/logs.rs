@@ -4,7 +4,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use assert_cmd::Command;
 use tempfile::TempDir;
@@ -25,6 +25,32 @@ fn tt_in(dir: &Path) -> Command {
     c.env_remove("TUKITUKI_RUN_DIR")
         .env_remove("TUKITUKI_STATE_DIR");
     c
+}
+
+/// Poll the on-disk log file until it contains `needle`. Replaces a
+/// fixed `sleep` after `start` so the tests don't race the child on
+/// slow runners.
+fn wait_for_log_content(dir: &Path, name: &str, needle: &str) {
+    let log_path = dir
+        .join(".tukituki")
+        .join("logs")
+        .join(format!("{name}.log"));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(content) = fs::read_to_string(&log_path) {
+            if content.contains(needle) {
+                return;
+            }
+        }
+        if Instant::now() >= deadline {
+            let observed = fs::read_to_string(&log_path).unwrap_or_default();
+            panic!(
+                "timed out waiting for {needle:?} in {}: {observed:?}",
+                log_path.display()
+            );
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 const TALKATIVE: &str = r#"
@@ -48,7 +74,7 @@ fn logs_oneshot_prints_buffered_lines() {
         .args(["start", "talkative"])
         .assert()
         .success();
-    thread::sleep(Duration::from_millis(400));
+    wait_for_log_content(dir.path(), "talkative", "line-10");
 
     let out = tt_in(dir.path())
         .args(["logs", "talkative"])
@@ -70,7 +96,7 @@ fn logs_tail_caps_output() {
         .args(["start", "talkative"])
         .assert()
         .success();
-    thread::sleep(Duration::from_millis(400));
+    wait_for_log_content(dir.path(), "talkative", "line-10");
 
     let out = tt_in(dir.path())
         .args(["logs", "talkative", "--tail", "3"])
@@ -89,7 +115,7 @@ fn logs_tail_zero_prints_all() {
         .args(["start", "talkative"])
         .assert()
         .success();
-    thread::sleep(Duration::from_millis(400));
+    wait_for_log_content(dir.path(), "talkative", "line-10");
 
     let out = tt_in(dir.path())
         .args(["logs", "talkative", "--tail", "0"])
@@ -144,7 +170,7 @@ fn logs_follow_streams_until_process_exits() {
         .args(["start", "sleeper"])
         .assert()
         .success();
-    thread::sleep(Duration::from_millis(400));
+    wait_for_log_content(dir.path(), "sleeper", "start");
 
     // Spawn `tukituki logs sleeper --follow` and read its stdout
     // for ~600ms, then kill the child. Use std::process::Command
