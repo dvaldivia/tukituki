@@ -31,6 +31,14 @@ pub trait ManagerHandle: Send + Sync + 'static {
     /// new target with `otel: true` brings the collector up.
     fn ensure_otel_collector(&self) -> std::io::Result<()>;
     fn log_file_path(&self, name: &str) -> Option<PathBuf>;
+    /// Path to `state.json` on disk. The TUI watches this so external
+    /// `tukituki start/stop/restart` invocations are reflected without
+    /// a detach/re-attach cycle.
+    fn state_file_path(&self) -> PathBuf;
+    /// Re-read `state.json` into the manager's in-memory mirror, then
+    /// ensure a log tailer is running for each known process. Called
+    /// in response to a state-file change event.
+    fn reload_state_from_disk(&self);
 }
 
 impl ManagerHandle for tukituki_process::Manager {
@@ -75,5 +83,11 @@ impl ManagerHandle for tukituki_process::Manager {
     }
     fn log_file_path(&self, name: &str) -> Option<PathBuf> {
         tukituki_process::Manager::log_file_path(self, name)
+    }
+    fn state_file_path(&self) -> PathBuf {
+        tukituki_process::Manager::state_file_path(self)
+    }
+    fn reload_state_from_disk(&self) {
+        tukituki_process::Manager::reload_state_from_disk(self);
     }
 }

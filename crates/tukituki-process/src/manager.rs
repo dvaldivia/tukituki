@@ -662,6 +662,46 @@ impl Manager {
         self.lock().state.processes.clone()
     }
 
+    /// Path to the on-disk state file this manager is bound to.
+    pub fn state_file_path(&self) -> PathBuf {
+        self.lock().state_dir.join("state.json")
+    }
+
+    /// Re-read `state.json` and reconcile with our in-memory mirror.
+    ///
+    /// Used by the TUI when its state-file watcher fires: an external
+    /// `tukituki start/stop/restart` updated the file behind our back,
+    /// so our cached `state.processes` now points at the old PID. Pulls
+    /// the new state in, then ensures a log tailer is running for every
+    /// known process (no-op when one already is) so any freshly-spawned
+    /// child's output appears in the ring buffer.
+    ///
+    /// Idempotent. Missing or corrupt `state.json` resets the in-memory
+    /// state to empty — same fail-soft behaviour as [`State::load`].
+    pub fn reload_state_from_disk(&self) {
+        let to_tail: Vec<(String, PathBuf)> = {
+            let mut inner = self.lock();
+            let path = inner.state_dir.join("state.json");
+            inner.state = State::load(&path);
+            inner.state.reconcile_alive();
+            // Snapshot known tailers as owned strings so the filter
+            // below doesn't have to keep an immutable borrow of `inner`
+            // alive alongside the iter over `inner.state.processes`.
+            let known: std::collections::HashSet<String> =
+                inner.tailer_cancels.keys().cloned().collect();
+            inner
+                .state
+                .processes
+                .iter()
+                .filter(|(name, ps)| !ps.log_file.is_empty() && !known.contains(*name))
+                .map(|(name, ps)| (name.clone(), PathBuf::from(&ps.log_file)))
+                .collect()
+        };
+        for (name, path) in to_tail {
+            self.start_log_tailer(&name, &path);
+        }
+    }
+
     /// Headless attach: after a fresh tukituki process starts against an
     /// existing state file, reconcile alive/dead and persist. Also
     /// starts a log tailer for each still-running process so the ring

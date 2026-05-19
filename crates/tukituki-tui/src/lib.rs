@@ -37,6 +37,12 @@ pub mod test_support {
     pub fn scroll_log(delta: i32) -> AppEvent {
         AppEvent::ScrollLog(delta)
     }
+    pub fn state_file_change() -> AppEvent {
+        AppEvent::StateFileChange
+    }
+    pub fn op_done(id: u64, summary: String) -> AppEvent {
+        AppEvent::OpDone { id, summary }
+    }
 }
 
 use std::io;
@@ -107,6 +113,11 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // `$EDITOR` runs so the editor child isn't fighting the reader
     // for stdin on the same PTY fd.
     let mut app = App::new(targets, manager, run_dir.clone(), project_root);
+    // Hand the App a sender so action handlers can offload blocking
+    // manager calls (stop/start/restart) to a worker thread and post
+    // OpDone events back here. Without this the UI freezes for the
+    // full SIGTERM-wait-SIGKILL window of every target.
+    app.attach_event_sender(tx.clone());
     let input_paused = app.input_paused_handle();
 
     // Spawn the input reader thread. Polls crossterm and forwards
@@ -136,6 +147,24 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // reload event. Debounced inside notify-debouncer-mini.
     let reload_tx = tx.clone();
     let _watcher = spawn_fs_watcher(&run_dir, reload_tx).ok();
+
+    // State-file watcher: an external `tukituki start/stop/restart`
+    // updates `<state_dir>/state.json` behind our back. Without this
+    // watcher our cached `state.processes` would keep pointing at the
+    // pre-restart PID, and the sidebar would flag the service as
+    // crashed until the user detached and re-attached.
+    //
+    // `State::save` writes a sibling tempfile and renames it over the
+    // target, so we have to watch the *parent directory* — watching
+    // `state.json` directly would lose its inode on every save.
+    let state_file = app.manager.state_file_path();
+    let state_filename = state_file
+        .file_name()
+        .map(|s| s.to_os_string())
+        .unwrap_or_else(|| std::ffi::OsString::from("state.json"));
+    let _state_watcher = state_file
+        .parent()
+        .and_then(|dir| spawn_state_file_watcher(dir, state_filename, tx.clone()).ok());
 
     // Per-target log pumps. Forward each line from the manager's
     // subscriber channel as an `AppEvent::LogLine`.
@@ -336,6 +365,33 @@ fn input_loop(
             Err(_) => return,
         }
     }
+}
+
+fn spawn_state_file_watcher(
+    state_dir: &std::path::Path,
+    state_filename: std::ffi::OsString,
+    tx: mpsc::SyncSender<AppEvent>,
+) -> notify::Result<notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>> {
+    let mut debouncer = notify_debouncer_mini::new_debouncer(
+        Duration::from_millis(200),
+        move |events: notify_debouncer_mini::DebounceEventResult| {
+            if let Ok(events) = events {
+                let interesting = events
+                    .iter()
+                    .any(|e| e.path.file_name() == Some(state_filename.as_os_str()));
+                if interesting {
+                    let _ = tx.send(AppEvent::StateFileChange);
+                }
+            }
+        },
+    )?;
+    // Non-recursive: the state dir holds `state.json`, a tempfile during
+    // save, and a `logs/` subdir. Watching recursively would fire on
+    // every log line written by every backend — pointless cost.
+    debouncer
+        .watcher()
+        .watch(state_dir, notify::RecursiveMode::NonRecursive)?;
+    Ok(debouncer)
 }
 
 fn spawn_fs_watcher(

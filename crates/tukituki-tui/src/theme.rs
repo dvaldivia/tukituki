@@ -86,6 +86,16 @@ pub fn search_bar() -> Style {
         .fg(Color::Rgb(0xFF, 0xFF, 0xFF))
 }
 
+/// Footer row shown while background operations (restart, stop, …) are
+/// in flight. Dim blue background so it reads as system-level info
+/// rather than competing with the header's status/hint.
+pub fn footer_busy() -> Style {
+    Style::default()
+        .bg(Color::Rgb(0x1A, 0x23, 0x7E))
+        .fg(Color::Rgb(0xEC, 0xEF, 0xF1))
+        .add_modifier(Modifier::BOLD)
+}
+
 pub fn status_icon(s: tukituki_state::Status) -> (&'static str, Style) {
     use tukituki_state::Status as S;
     match s {

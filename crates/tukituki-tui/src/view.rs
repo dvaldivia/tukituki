@@ -18,12 +18,18 @@ use crate::theme;
 
 pub fn render<H: ManagerHandle>(f: &mut Frame, app: &App<H>) {
     let area = f.area();
+    let has_footer = !app.in_flight.is_empty();
+    let mut constraints: Vec<Constraint> = vec![Constraint::Length(1), Constraint::Min(0)];
+    if has_footer {
+        constraints.push(Constraint::Length(1));
+    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .constraints(constraints)
         .split(area);
     let header_area = chunks[0];
     let body_area = chunks[1];
+    let footer_area = if has_footer { Some(chunks[2]) } else { None };
 
     render_header(f, header_area, app);
 
@@ -41,12 +47,38 @@ pub fn render<H: ManagerHandle>(f: &mut Frame, app: &App<H>) {
         render_log_pane(f, body[1], app);
     }
 
+    if let Some(area) = footer_area {
+        render_footer(f, area, app);
+    }
+
     if app.help_visible {
         render_help_overlay(f, body_area);
     }
     if let Some(text) = &app.describe {
         render_text_overlay(f, body_area, "Describe", text);
     }
+}
+
+/// One-row "busy" bar shown only while background operations are in
+/// flight. Joins their labels so the user always knows the TUI is
+/// alive — a long restart-all (5–7s × N targets of SIGTERM/SIGKILL
+/// wait) without this looked exactly like a freeze.
+fn render_footer<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
+    // Sorted iteration via BTreeMap order keeps the footer stable as
+    // ops complete; otherwise a HashMap would shuffle the visible
+    // order on every redraw.
+    let joined: String = app
+        .in_flight
+        .values()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("  ·  ");
+    let text = format!(" Working: {joined} ");
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(text, theme::footer_busy())))
+            .style(theme::footer_busy()),
+        area,
+    );
 }
 
 fn render_header<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {

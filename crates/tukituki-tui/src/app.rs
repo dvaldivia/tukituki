@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::SyncSender;
 
 use ansi_to_tui::IntoText;
 use ratatui::text::Line;
@@ -95,6 +96,20 @@ pub struct App<H: ManagerHandle> {
     /// the wire. The main loop reads + clears this and forces a
     /// `terminal.clear()` before the next draw so every cell repaints.
     force_full_redraw: bool,
+
+    /// Labels of currently-running background operations, keyed by a
+    /// monotonic id assigned at op-spawn time. The footer renders
+    /// these so a slow `R` (restart-all) doesn't look like the TUI
+    /// froze.  Empty when nothing is in flight; the footer is hidden
+    /// entirely in that case rather than wasting a row.
+    pub in_flight: BTreeMap<u64, String>,
+    next_op_id: u64,
+    /// Channel back to the main event loop. When `Some`, action
+    /// handlers offload blocking manager calls to a worker thread
+    /// that posts [`crate::event::AppEvent::OpDone`] on completion.
+    /// `None` in tests, where the helper falls back to running work
+    /// synchronously so assertions on call ordering still hold.
+    op_tx: Option<SyncSender<crate::event::AppEvent>>,
 }
 
 pub struct LogBuffer {
@@ -239,6 +254,49 @@ impl<H: ManagerHandle> App<H> {
             search_match_idx: 0,
             input_paused: Arc::new(AtomicBool::new(false)),
             force_full_redraw: false,
+            in_flight: BTreeMap::new(),
+            next_op_id: 0,
+            op_tx: None,
+        }
+    }
+
+    /// Wire the App up to the main event loop's sender so action
+    /// handlers can offload blocking work to a worker thread and post
+    /// `OpDone` events back. Without this, handlers run inline — that
+    /// path is what unit tests exercise.
+    pub fn attach_event_sender(&mut self, tx: SyncSender<crate::event::AppEvent>) {
+        self.op_tx = Some(tx);
+    }
+
+    /// Begin a background operation: register `label` in `in_flight`
+    /// and either spawn a worker thread (production) or run `work`
+    /// inline (tests). The worker's return value becomes the flash
+    /// message shown when the op completes.
+    pub(crate) fn spawn_op<F>(&mut self, label: String, work: F)
+    where
+        F: FnOnce(&Arc<H>) -> String + Send + 'static,
+    {
+        let id = self.next_op_id;
+        self.next_op_id = self.next_op_id.wrapping_add(1);
+        self.in_flight.insert(id, label);
+        self.dirty = true;
+        self.urgent = true;
+
+        let mgr = self.manager.clone();
+        match self.op_tx.clone() {
+            None => {
+                // Synchronous fallback: tests can still assert on
+                // manager call ordering exactly as before.
+                let summary = work(&mgr);
+                self.in_flight.remove(&id);
+                self.flash(&summary);
+            }
+            Some(tx) => {
+                std::thread::spawn(move || {
+                    let summary = work(&mgr);
+                    let _ = tx.send(crate::event::AppEvent::OpDone { id, summary });
+                });
+            }
         }
     }
 
@@ -474,6 +532,22 @@ impl<H: ManagerHandle> App<H> {
                 }
                 Continuation::cont()
             }
+            AppEvent::StateFileChange => {
+                // External `tukituki start/stop/restart` rewrote
+                // state.json. Pull it back into the manager so the next
+                // tick sees the new PIDs; without this the sidebar
+                // would keep liveness-checking the pre-restart PID and
+                // flag the service as crashed until the user detached
+                // and re-attached.
+                self.manager.reload_state_from_disk();
+                let new_statuses = self.manager.get_all_statuses();
+                if new_statuses != self.statuses {
+                    self.statuses = new_statuses;
+                    self.dirty = true;
+                    self.urgent = true;
+                }
+                Continuation::cont()
+            }
             AppEvent::FileChange => {
                 if let Ok(mut targets) = load_targets(&self.run_dir) {
                     let dotenv = load_dotenv(&self.project_root).ok().flatten();
@@ -507,6 +581,13 @@ impl<H: ManagerHandle> App<H> {
             AppEvent::EditorDone(_) => {
                 // Force a re-render; the file change should also have
                 // fired a FileChange so target state will refresh.
+                self.dirty = true;
+                self.urgent = true;
+                Continuation::cont()
+            }
+            AppEvent::OpDone { id, summary } => {
+                self.in_flight.remove(&id);
+                self.flash(&summary);
                 self.dirty = true;
                 self.urgent = true;
                 Continuation::cont()

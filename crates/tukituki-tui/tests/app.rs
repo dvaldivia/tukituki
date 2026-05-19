@@ -23,6 +23,11 @@ struct FakeManager {
     restarted: Mutex<Vec<String>>,
     dumped: Mutex<Vec<(String, PathBuf)>>,
     cleared: Mutex<Vec<String>>,
+    /// New statuses to return after a `reload_state_from_disk` call —
+    /// lets tests model "external CLI restarted X" without touching a
+    /// real state.json. None = no pending swap.
+    pending_reload_statuses: Mutex<Option<BTreeMap<String, Status>>>,
+    reload_count: Mutex<usize>,
 }
 
 impl ManagerHandle for FakeManager {
@@ -79,6 +84,15 @@ impl ManagerHandle for FakeManager {
     }
     fn log_file_path(&self, _name: &str) -> Option<PathBuf> {
         None
+    }
+    fn state_file_path(&self) -> PathBuf {
+        PathBuf::from("/tmp/fake-tukituki-state.json")
+    }
+    fn reload_state_from_disk(&self) {
+        *self.reload_count.lock().unwrap() += 1;
+        if let Some(new) = self.pending_reload_statuses.lock().unwrap().take() {
+            *self.statuses.lock().unwrap() = new;
+        }
     }
 }
 
@@ -142,6 +156,8 @@ pub enum AppEventForTest {
     Tick,
     LogLine { target: String, line: String },
     ScrollLog(i32),
+    StateFileChange,
+    OpDone { id: u64, summary: String },
 }
 
 fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
@@ -152,6 +168,8 @@ fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
             tukituki_tui::test_support::log_line(target, line)
         }
         AppEventForTest::ScrollLog(d) => tukituki_tui::test_support::scroll_log(d),
+        AppEventForTest::StateFileChange => tukituki_tui::test_support::state_file_change(),
+        AppEventForTest::OpDone { id, summary } => tukituki_tui::test_support::op_done(id, summary),
     };
     app.handle(real).continue_loop
 }
@@ -292,6 +310,97 @@ fn restart_key_calls_manager_restart() {
     );
     dispatch(&mut app, key(KeyCode::Char('r')));
     assert_eq!(*mgr.restarted.lock().unwrap(), vec!["alpha".to_string()]);
+}
+
+#[test]
+fn op_done_removes_in_flight_entry_and_flashes_summary() {
+    // Simulate the asynchronous path: an action handler would have
+    // pushed into `in_flight` with some id, spawned a worker, and the
+    // worker would eventually post OpDone. Here we seed in_flight by
+    // hand and verify the OpDone handler does the cleanup.
+    let mut app = make_app(vec![target("a")]);
+    app.in_flight.insert(42, "restarting a".into());
+    assert_eq!(app.in_flight.len(), 1);
+    dispatch(
+        &mut app,
+        AppEventForTest::OpDone {
+            id: 42,
+            summary: "restarted a".into(),
+        },
+    );
+    assert!(
+        app.in_flight.is_empty(),
+        "OpDone must remove the in-flight entry"
+    );
+    assert_eq!(
+        app.status_msg, "restarted a",
+        "OpDone summary should flash in the header"
+    );
+}
+
+#[test]
+fn restart_all_runs_synchronously_in_tests_and_clears_in_flight() {
+    // No event sender is attached in tests, so spawn_op falls back to
+    // running the work inline. Verify the in-flight map is empty after
+    // dispatch (insert + immediate remove) and that the manager
+    // observed the stop+start sequence.
+    let mgr = std::sync::Arc::new(FakeManager::default());
+    let mut app = App::new(
+        vec![target("a"), target("b")],
+        mgr.clone(),
+        PathBuf::from("."),
+        PathBuf::from("."),
+    );
+    dispatch(&mut app, key(KeyCode::Char('R')));
+    assert!(
+        app.in_flight.is_empty(),
+        "synchronous fallback should not leave in-flight entries behind"
+    );
+    assert_eq!(*mgr.stopped.lock().unwrap(), vec!["a", "b"]);
+    assert_eq!(*mgr.started.lock().unwrap(), vec!["a", "b"]);
+    assert!(
+        app.status_msg.contains("restarted 2 target(s)"),
+        "summary should flash after synchronous restart-all, got {:?}",
+        app.status_msg
+    );
+}
+
+#[test]
+fn state_file_change_reloads_and_refreshes_statuses() {
+    // Models the external-CLI scenario: TUI's cached status is Running;
+    // an external `tukituki restart` rewrites state.json and the new
+    // PID is alive — but the TUI's status would only update after a
+    // reload. Firing StateFileChange should pull the fresh statuses in.
+    let mgr = std::sync::Arc::new(FakeManager::default());
+    mgr.statuses
+        .lock()
+        .unwrap()
+        .insert("alpha".into(), Status::Running);
+    let mut app = App::new(
+        vec![target("alpha")],
+        mgr.clone(),
+        PathBuf::from("."),
+        PathBuf::from("."),
+    );
+    app.statuses = mgr.get_all_statuses();
+    // Stage the post-reload statuses the manager will switch to when
+    // reload_state_from_disk fires.
+    let mut after = BTreeMap::new();
+    after.insert("alpha".into(), Status::Failed);
+    *mgr.pending_reload_statuses.lock().unwrap() = Some(after);
+
+    dispatch(&mut app, AppEventForTest::StateFileChange);
+
+    assert_eq!(
+        *mgr.reload_count.lock().unwrap(),
+        1,
+        "StateFileChange must call reload_state_from_disk exactly once"
+    );
+    assert_eq!(
+        app.statuses.get("alpha").copied(),
+        Some(Status::Failed),
+        "App should adopt the post-reload manager statuses"
+    );
 }
 
 #[test]
@@ -939,5 +1048,8 @@ fn restart_all_clears_per_target_buffers() {
     );
     dispatch(&mut app, key(KeyCode::Char('R')));
     assert!(app.logs.get("a").unwrap().lines.is_empty());
-    assert_eq!(*mgr.restarted.lock().unwrap(), vec!["a", "b"]);
+    // Restart-all is two-phase: all stops (with cleanup) run before any
+    // starts, so a later target's cleanup can't kill an earlier target.
+    assert_eq!(*mgr.stopped.lock().unwrap(), vec!["a", "b"]);
+    assert_eq!(*mgr.started.lock().unwrap(), vec!["a", "b"]);
 }

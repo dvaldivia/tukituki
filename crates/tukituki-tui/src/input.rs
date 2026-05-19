@@ -239,52 +239,74 @@ fn action_start<H: ManagerHandle>(app: &mut App<H>) {
     let Some(name) = app.selected_target_name() else {
         return;
     };
-    let msg = match app.manager.start(&name) {
-        Ok(_) => format!("started {name}"),
-        Err(e) => format!("start {name}: {e}"),
-    };
-    app.flash(&msg);
+    let name_for_work = name.clone();
+    app.spawn_op(format!("starting {name}"), move |mgr| {
+        match mgr.start(&name_for_work) {
+            Ok(_) => format!("started {name_for_work}"),
+            Err(e) => format!("start {name_for_work}: {e}"),
+        }
+    });
 }
 
 fn action_stop<H: ManagerHandle>(app: &mut App<H>) {
     let Some(name) = app.selected_target_name() else {
         return;
     };
-    let msg = match app.manager.stop(&name) {
-        Ok(_) => format!("stopped {name}"),
-        Err(e) => format!("stop {name}: {e}"),
-    };
-    app.flash(&msg);
+    let name_for_work = name.clone();
+    app.spawn_op(format!("stopping {name}"), move |mgr| {
+        match mgr.stop(&name_for_work) {
+            Ok(_) => format!("stopped {name_for_work}"),
+            Err(e) => format!("stop {name_for_work}: {e}"),
+        }
+    });
 }
 
 fn action_restart<H: ManagerHandle>(app: &mut App<H>) {
     let Some(name) = app.selected_target_name() else {
         return;
     };
-    let msg = match app.manager.restart(&name) {
-        Ok(_) => format!("restarted {name}"),
-        Err(e) => format!("restart {name}: {e}"),
-    };
-    app.flash(&msg);
+    let name_for_work = name.clone();
+    app.spawn_op(format!("restarting {name}"), move |mgr| {
+        match mgr.restart(&name_for_work) {
+            Ok(_) => format!("restarted {name_for_work}"),
+            Err(e) => format!("restart {name_for_work}: {e}"),
+        }
+    });
 }
 
 fn action_restart_all<H: ManagerHandle>(app: &mut App<H>) {
     let names: Vec<String> = app.targets.iter().map(|t| t.name.clone()).collect();
-    let mut ok = 0usize;
-    let mut err = 0usize;
+
+    // Clear the per-target log buffers from the main thread — worker
+    // threads can't touch App state, and clearing here gives the
+    // restart a fresh visible scrollback right away (matches Go's R).
     for n in &names {
-        // Clear the per-target log buffer so restart-all gives a fresh
-        // scrollback (matches Go's R behaviour).
         if let Some(buf) = app.logs.get_mut(n) {
             buf.clear();
         }
-        if app.manager.restart(n).is_ok() {
-            ok += 1;
-        } else {
-            err += 1;
-        }
     }
-    app.flash(&format!("restarted {ok} target(s), {err} error(s)"));
+
+    let label = format!("restarting {} target(s)", names.len());
+    app.spawn_op(label, move |mgr| {
+        // Two-phase: stop+cleanup every target before starting any. A
+        // naive per-target restart loop interleaves stop+start, so a
+        // later target's cleanup command (e.g. a shared `pkill -f
+        // node`) can kill an earlier target right after it just came
+        // up.
+        for n in &names {
+            let _ = mgr.stop(n);
+        }
+        let mut ok = 0usize;
+        let mut err = 0usize;
+        for n in &names {
+            if mgr.start(n).is_ok() {
+                ok += 1;
+            } else {
+                err += 1;
+            }
+        }
+        format!("restarted {ok} target(s), {err} error(s)")
+    });
 }
 
 fn action_dump<H: ManagerHandle>(app: &mut App<H>) {
@@ -295,10 +317,14 @@ fn action_dump<H: ManagerHandle>(app: &mut App<H>) {
     let dest = std::env::current_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join(format!("{name}-{stamp}.log"));
-    match app.manager.dump_log(&name, &dest) {
-        Ok(_) => app.flash(&format!("dumped to {}", dest.display())),
-        Err(e) => app.flash(&format!("dump {name}: {e}")),
-    }
+    let name_for_work = name.clone();
+    let dest_for_work = dest.clone();
+    app.spawn_op(format!("dumping {name}"), move |mgr| {
+        match mgr.dump_log(&name_for_work, &dest_for_work) {
+            Ok(_) => format!("dumped to {}", dest_for_work.display()),
+            Err(e) => format!("dump {name_for_work}: {e}"),
+        }
+    });
 }
 
 fn action_clear<H: ManagerHandle>(app: &mut App<H>) {
