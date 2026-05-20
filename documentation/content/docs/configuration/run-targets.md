@@ -52,6 +52,7 @@ The group name is derived from the subdirectory; it cannot be set in the YAML fi
 | `description` | string | no | `""` | Human-readable description shown in the TUI and `tukituki status` output. |
 | `cleanup` | list of strings | no | `[]` | Shell commands run sequentially after the process stops. Useful for releasing ports or removing lock files. |
 | `otel` | bool | no | `false` | Enable OpenTelemetry log collection. When `true`, tukituki injects `OTEL_EXPORTER_OTLP_ENDPOINT` into the process and starts a bundled OTLP receiver. See the [OpenTelemetry guide]({{< relref "/docs/guides/opentelemetry" >}}). |
+| `autorun` | bool | no | `true` | When `false`, the target is loaded and visible in the TUI but is **not** included in bulk auto-start (`tukituki start` with no name, TUI launch, or restart-all of a stopped target). It can still be started explicitly by name (`tukituki start <name>`) or with the TUI's `S`/`r` keys. Use for opt-in helpers you don't want running by default. |
 
 ## Annotated Example
 

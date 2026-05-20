@@ -275,7 +275,18 @@ fn action_restart<H: ManagerHandle>(app: &mut App<H>) {
 }
 
 fn action_restart_all<H: ManagerHandle>(app: &mut App<H>) {
-    let names: Vec<String> = app.targets.iter().map(|t| t.name.clone()).collect();
+    // Bulk restart honours `autorun: false`: a manual-only target is
+    // restarted only if it's already running (the user started it on
+    // purpose), otherwise it's left alone.
+    let names: Vec<String> = app
+        .targets
+        .iter()
+        .filter(|t| {
+            t.autorun
+                || app.statuses.get(&t.name).copied() == Some(tukituki_state::Status::Running)
+        })
+        .map(|t| t.name.clone())
+        .collect();
 
     // Clear the per-target log buffers from the main thread — worker
     // threads can't touch App state, and clearing here gives the

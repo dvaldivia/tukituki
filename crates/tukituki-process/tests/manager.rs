@@ -73,6 +73,32 @@ fn start_all_runs_each_target() {
 }
 
 #[test]
+fn start_all_skips_autorun_false() {
+    let mut manual = sleep_target("manual");
+    manual.autorun = false;
+    let targets = vec![sleep_target("auto"), manual];
+    let (_dir, m) = new_test_manager(targets);
+
+    m.start_all().expect("start_all");
+    thread::sleep(Duration::from_millis(300));
+
+    assert_eq!(m.get_status("auto"), Status::Running);
+    assert_ne!(
+        m.get_status("manual"),
+        Status::Running,
+        "autorun: false target must not be started by start_all"
+    );
+
+    // Targeted start still works — the manual target is reachable by name.
+    m.start("manual").expect("start by name");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(m.get_status("manual"), Status::Running);
+
+    let _ = m.stop("auto");
+    let _ = m.stop("manual");
+}
+
+#[test]
 fn dump_log_writes_child_output() {
     let (_dir, m) = new_test_manager(vec![echo_target("logger")]);
     m.start("logger").expect("start");

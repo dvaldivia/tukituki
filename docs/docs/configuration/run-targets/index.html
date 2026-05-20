@@ -35,7 +35,7 @@ File Discovery
   <meta itemprop="name" content="Run Target Reference">
   <meta itemprop="description" content="Each process that tukituki manages is described by a YAML file placed in the run directory (default: .run/). You can have one process per file or several — the only constraint is that every name must be unique across all files in the directory.
 File Discovery tukituki loads every file matching *.yaml or *.yml inside the run directory and sorts the resulting processes alphabetically by their name field. The sort order affects the default display order in the TUI process list.">
-  <meta itemprop="wordCount" content="874">
+  <meta itemprop="wordCount" content="936">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Run Target Reference">
   <meta name="twitter:description" content="Each process that tukituki manages is described by a YAML file placed in the run directory (default: .run/). You can have one process per file or several — the only constraint is that every name must be unique across all files in the directory.
@@ -532,6 +532,13 @@ File Discovery tukituki loads every file matching *.yaml or *.yml inside the run
           <td>no</td>
           <td><code>false</code></td>
           <td>Enable OpenTelemetry log collection. When <code>true</code>, tukituki injects <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> into the process and starts a bundled OTLP receiver. See the <a href="/tukituki/docs/guides/opentelemetry/">OpenTelemetry guide</a>.</td>
+      </tr>
+      <tr>
+          <td><code>autorun</code></td>
+          <td>bool</td>
+          <td>no</td>
+          <td><code>true</code></td>
+          <td>When <code>false</code>, the target is loaded and visible in the TUI but is <strong>not</strong> included in bulk auto-start (<code>tukituki start</code> with no name, TUI launch, or restart-all of a stopped target). It can still be started explicitly by name (<code>tukituki start &lt;name&gt;</code>) or with the TUI&rsquo;s <code>S</code>/<code>r</code> keys. Use for opt-in helpers you don&rsquo;t want running by default.</td>
       </tr>
   </tbody>
 </table>

@@ -141,6 +141,13 @@
           &lt;td&gt;&lt;code&gt;false&lt;/code&gt;&lt;/td&gt;
           &lt;td&gt;Enable OpenTelemetry log collection. When &lt;code&gt;true&lt;/code&gt;, tukituki injects &lt;code&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/code&gt; into the process and starts a bundled OTLP receiver. See the &lt;a href=&#34;http://localhost:1313/tukituki/docs/guides/opentelemetry/&#34;&gt;OpenTelemetry guide&lt;/a&gt;.&lt;/td&gt;
       &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;autorun&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;bool&lt;/td&gt;
+          &lt;td&gt;no&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;true&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;When &lt;code&gt;false&lt;/code&gt;, the target is loaded and visible in the TUI but is &lt;strong&gt;not&lt;/strong&gt; included in bulk auto-start (&lt;code&gt;tukituki start&lt;/code&gt; with no name, TUI launch, or restart-all of a stopped target). It can still be started explicitly by name (&lt;code&gt;tukituki start &amp;lt;name&amp;gt;&lt;/code&gt;) or with the TUI&amp;rsquo;s &lt;code&gt;S&lt;/code&gt;/&lt;code&gt;r&lt;/code&gt; keys. Use for opt-in helpers you don&amp;rsquo;t want running by default.&lt;/td&gt;
+      &lt;/tr&gt;
   &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;h2&gt;Annotated Example&lt;span class=&#34;hx:absolute hx:-mt-20&#34; id=&#34;annotated-example&#34;&gt;&lt;/span&gt;

@@ -502,13 +502,15 @@ impl Manager {
     }
 
     /// `StartAll`: start every target that isn't already running. Targets
-    /// with parse errors are silently skipped. Stops on first error.
+    /// with parse errors are silently skipped, as are targets that opted
+    /// out of bulk start via `autorun: false` — those can still be
+    /// started by name. Stops on first error.
     pub fn start_all(&self) -> io::Result<()> {
         let names: Vec<String> = self
             .lock()
             .targets
             .iter()
-            .filter(|t| t.parse_error.is_empty())
+            .filter(|t| t.parse_error.is_empty() && t.autorun)
             .map(|t| t.name.clone())
             .collect();
         for name in names {

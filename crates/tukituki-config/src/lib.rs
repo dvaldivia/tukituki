@@ -20,7 +20,7 @@ pub use expand::expand_env;
 /// Field set matches `config.RunTarget` in the Go binary. `BTreeMap` is
 /// used for `env` to keep iteration order deterministic — useful for
 /// `--json` output and for byte-stable test assertions.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunTarget {
     pub name: String,
@@ -38,6 +38,13 @@ pub struct RunTarget {
     pub cleanup: Vec<String>,
     #[serde(default)]
     pub otel: bool,
+    /// Default `true`. When `false`, the target is loaded and visible in
+    /// the TUI but is excluded from bulk auto-start (`StartAll`, TUI
+    /// startup, restart-all). Single-target start/restart/stop still
+    /// work — useful for opt-in helpers you don't want running by
+    /// default.
+    #[serde(default = "default_autorun")]
+    pub autorun: bool,
 
     // Runtime-only fields, never read from YAML.
     #[serde(skip)]
@@ -48,6 +55,30 @@ pub struct RunTarget {
     pub is_virtual: bool,
     #[serde(skip)]
     pub source_file: String,
+}
+
+fn default_autorun() -> bool {
+    true
+}
+
+impl Default for RunTarget {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            command: String::new(),
+            workdir: String::new(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            description: String::new(),
+            cleanup: Vec::new(),
+            otel: false,
+            autorun: true,
+            group: String::new(),
+            parse_error: String::new(),
+            is_virtual: false,
+            source_file: String::new(),
+        }
+    }
 }
 
 /// `LoadTargets` analogue: read every `.yaml`/`.yml` file under `run_dir`
@@ -310,6 +341,29 @@ command: ./worker
         let targets = load_targets(dir.path()).expect("load");
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].name, "real");
+    }
+
+    #[test]
+    fn load_targets_autorun_default_true() {
+        let dir = tempdir();
+        write_yaml(dir.path(), "svc.yaml", "name: svc\ncommand: echo\n");
+        let targets = load_targets(dir.path()).expect("load");
+        assert!(
+            targets[0].autorun,
+            "autorun should default to true when omitted from YAML"
+        );
+    }
+
+    #[test]
+    fn load_targets_autorun_explicit_false() {
+        let dir = tempdir();
+        write_yaml(
+            dir.path(),
+            "svc.yaml",
+            "name: svc\ncommand: echo\nautorun: false\n",
+        );
+        let targets = load_targets(dir.path()).expect("load");
+        assert!(!targets[0].autorun);
     }
 
     #[test]

@@ -227,6 +227,7 @@ cleanup:
 | `description` | no | Human-readable label shown in `list` and `status` |
 | `cleanup` | no | Shell commands run after the process stops |
 | `otel` | no | Enable OpenTelemetry log collection for this target (`true`/`false`) |
+| `autorun` | no | Default `true`. Set to `false` to exclude the target from bulk auto-start (TUI launch, `tukituki start` with no name). It still shows up in the TUI and can be started manually by name. |
 
 ### Grouping targets into folders
 
