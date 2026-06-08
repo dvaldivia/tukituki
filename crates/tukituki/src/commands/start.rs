@@ -12,7 +12,7 @@ pub(crate) struct ActionResult<'a> {
     pub status: &'a str,
 }
 
-pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
+pub fn run(cli: &Cli, target: Option<&str>, tags: &[String]) -> ExitCode {
     let run_dir = runtime::resolve_run_dir(cli);
     let state_dir = runtime::resolve_state_dir(cli);
     let project_root = runtime::resolve_project_root();
@@ -26,6 +26,15 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
         Err(code) => return code,
     };
 
+    if target.is_some() && !tags.is_empty() {
+        runtime::exit_error(
+            cli.json,
+            "cannot specify both a target name and --tags",
+            &[],
+        );
+        return ExitCode::from(2);
+    }
+
     if let Some(name) = target {
         if let Err(code) = runtime::find_target_or_die(&targets, name, cli.json) {
             return code;
@@ -37,9 +46,39 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
         return print_one(&mgr, name, cli.json);
     }
 
-    if let Err(e) = mgr.start_all() {
-        runtime::exit_error(cli.json, &format!("start all: {e}"), &[]);
-        return ExitCode::from(1);
+    // Determine the set we will start.
+    let selected: Vec<tukituki_config::RunTarget> = if !tags.is_empty() {
+        let filtered = tukituki_config::filter_targets_by_tags(&targets, tags);
+        if filtered.is_empty() {
+            runtime::exit_error(
+                cli.json,
+                &format!("no targets matched --tags {:?}", tags),
+                &[],
+            );
+            return ExitCode::from(1);
+        }
+        filtered
+    } else {
+        // No tags: fall back to the full list; start_all below will apply autorun filtering.
+        targets.clone()
+    };
+
+    if !tags.is_empty() {
+        // Explicit tag selection: start exactly these (even if autorun:false),
+        // mirroring the behaviour of naming a target explicitly.
+        for t in &selected {
+            if t.parse_error.is_empty() {
+                if let Err(e) = mgr.start(&t.name) {
+                    runtime::exit_error(cli.json, &format!("start {}: {e}", t.name), &[]);
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    } else {
+        if let Err(e) = mgr.start_all() {
+            runtime::exit_error(cli.json, &format!("start all: {e}"), &[]);
+            return ExitCode::from(1);
+        }
     }
 
     // Start the OTel collector if any target has `otel: true`. Non-fatal:
@@ -49,10 +88,17 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
         eprintln!("Warning: could not start OTel collector: {e}");
     }
 
-    let all_targets = mgr.get_targets();
+    // For reporting, use the targets we actually considered (tag-filtered or all).
+    // When using tags we report only the selected; when no tags we report what start_all considered.
+    let report_targets: Vec<_> = if !tags.is_empty() {
+        selected
+    } else {
+        mgr.get_targets()
+    };
+
     if cli.json {
         let statuses = mgr.get_all_statuses();
-        let results: Vec<ActionResult<'_>> = all_targets
+        let results: Vec<ActionResult<'_>> = report_targets
             .iter()
             .map(|t| ActionResult {
                 name: &t.name,
@@ -70,7 +116,7 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
         }
     } else {
         let statuses = mgr.get_all_statuses();
-        for t in &all_targets {
+        for t in &report_targets {
             match statuses.get(&t.name) {
                 Some(s) => println!("Started: {} (status: {})", t.name, runtime::status_str(*s)),
                 None => println!("Started: {}", t.name),

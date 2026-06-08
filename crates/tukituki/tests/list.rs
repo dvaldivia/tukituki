@@ -285,3 +285,90 @@ fn list_text_uses_tabwriter_alignment() {
         assert!(chars.len() > "longername".len(), "row too narrow: {line:?}");
     }
 }
+
+#[test]
+fn list_json_includes_tags_when_present() {
+    let dir = fixture_run_dir(&[(
+        "svc.yaml",
+        "name: svc\ncommand: echo\ntags: [backend, api]\n",
+    )]);
+    let out = tukituki_in(dir.path())
+        .args(["list", "--json"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(out.get_output().stdout.clone()).unwrap();
+    assert!(stdout.contains("\"tags\""), "tags key should be present: {stdout}");
+    assert!(stdout.contains("backend"), "tag value: {stdout}");
+}
+
+#[test]
+fn list_json_omits_tags_when_empty() {
+    let dir = fixture_run_dir(&[("plain.yaml", "name: plain\ncommand: echo\n")]);
+    let out = tukituki_in(dir.path())
+        .args(["list", "--json"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(out.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("\"tags\""),
+        "tags must be omitted when empty: {stdout}"
+    );
+}
+
+#[test]
+fn list_text_shows_tags_column_and_values() {
+    let dir = fixture_run_dir(&[
+        ("b.yaml", "name: b\ncommand: echo\ntags: [backend]\n"),
+        ("f.yaml", "name: f\ncommand: echo\ntags: [frontend,ui]\n"),
+        ("p.yaml", "name: p\ncommand: echo\n"),
+    ]);
+    let out = tukituki_in(dir.path()).arg("list").assert().success();
+    let stdout = String::from_utf8(out.get_output().stdout.clone()).unwrap();
+    assert!(stdout.contains("TAGS"), "header: {stdout}");
+    // backend row should show the tag
+    assert!(stdout.contains("backend"), "backend tag visible: {stdout}");
+    // p has no tags → its row must exist and must not mention the tags from the other targets
+    let p_line = stdout
+        .lines()
+        .find(|l| l.contains(" p ") || l.starts_with("p ") || (l.contains('p') && l.contains("echo")))
+        .expect("p row");
+    assert!(
+        !p_line.contains("backend") && !p_line.contains("frontend") && !p_line.contains("ui"),
+        "plain target row must not show tags from others: {p_line}"
+    );
+}
+
+#[test]
+fn list_respects_tags_filter() {
+    let dir = fixture_run_dir(&[
+        ("api.yaml", "name: api\ncommand: go\ntags: [backend, api]\n"),
+        ("worker.yaml", "name: worker\ncommand: echo\ntags: [backend, worker]\n"),
+        ("ui.yaml", "name: ui\ncommand: npm\ntags: [frontend]\n"),
+    ]);
+    let out = tukituki_in(dir.path())
+        .args(["list", "--tags=backend", "--json"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(out.get_output().stdout.clone()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let names: Vec<_> = v.as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["api", "worker"]);
+
+    // OR semantics with multiple tags
+    let out2 = tukituki_in(dir.path())
+        .args(["list", "--tags=frontend,worker", "--json"])
+        .assert()
+        .success();
+    let v2: serde_json::Value = serde_json::from_str(&String::from_utf8(out2.get_output().stdout.clone()).unwrap()).unwrap();
+    let names2: Vec<_> = v2.as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
+    assert_eq!(names2, vec!["ui", "worker"]);
+}
+
+#[test]
+fn list_tags_filter_empty_result_is_ok() {
+    let dir = fixture_run_dir(&[("x.yaml", "name: x\ncommand: echo\ntags: [only-this]\n")]);
+    tukituki_in(dir.path())
+        .args(["list", "--tags=nomatch", "--json"])
+        .assert()
+        .success();
+}

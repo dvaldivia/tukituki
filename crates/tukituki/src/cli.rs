@@ -53,49 +53,65 @@ pub enum Command {
 
     /// List all configured run targets
     #[command(
-        long_about = "List all run targets defined in .run/*.yaml.\n\nOutputs name, command, and description for each target.\nUse --json for machine-readable output.",
-        after_help = "Examples:\n  tukituki list\n  tukituki list --json"
+        long_about = "List all run targets defined in .run/*.yaml.\n\nOutputs name, command, and description for each target.\nUse --tags to filter to targets bearing at least one of the listed tags (comma-separated).\nUse --json for machine-readable output.",
+        after_help = "Examples:\n  tukituki list\n  tukituki list --json\n  tukituki list --tags=backend"
     )]
-    List,
+    List {
+        /// Only list targets that have at least one of the given tags (comma or space separated)
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
 
     /// Print the status of all targets (or a single target)
     #[command(
-        long_about = "Print the runtime status of managed processes.\n\nWith no argument all targets are shown. Pass a target name to query one.\nStatus values: running, stopped, failed, unknown.\nUse --json for machine-readable output.",
-        after_help = "Examples:\n  tukituki status\n  tukituki status api\n  tukituki status --json"
+        long_about = "Print the runtime status of managed processes.\n\nWith no argument all targets are shown. Pass a target name to query one.\nUse --tags to show only targets bearing at least one of the listed tags.\nStatus values: running, stopped, failed, unknown.\nUse --json for machine-readable output.",
+        after_help = "Examples:\n  tukituki status\n  tukituki status api\n  tukituki status --tags=backend --json"
     )]
     Status {
         /// Specific target to query (omit to list all)
         target: Option<String>,
+        /// Only show targets that have at least one of the given tags (comma or space separated)
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
     },
 
     /// Start one or all targets (headless, no TUI)
     #[command(
-        long_about = "Start one or all targets as background processes (no TUI).\n\nIf target-name is omitted, all configured targets are started.\nProcesses that are already running are left untouched.\nUse --json for machine-readable output.",
-        after_help = "Examples:\n  tukituki start\n  tukituki start api"
+        long_about = "Start one or all targets as background processes (no TUI).\n\nIf target-name is omitted, all configured targets are started.\nProcesses that are already running are left untouched.\nUse --tags to limit to targets bearing at least one of the listed tags (comma-separated).\nUse --json for machine-readable output.",
+        after_help = "Examples:\n  tukituki start\n  tukituki start api\n  tukituki start --tags=backend,worker"
     )]
     Start {
         /// Specific target to start (omit to start all)
         target: Option<String>,
+        /// Only affect targets that have at least one of the given tags (comma or space separated)
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
     },
 
     /// Stop one or all targets
     #[command(
-        long_about = "Stop one or all running targets.\n\nSends SIGTERM, waits up to 5 seconds, then SIGKILLs if still running.\nIf target-name is omitted, all targets are stopped.\nUse --json for machine-readable output.",
-        after_help = "Examples:\n  tukituki stop\n  tukituki stop api"
+        long_about = "Stop one or all running targets.\n\nSends SIGTERM, waits up to 5 seconds, then SIGKILLs if still running.\nIf target-name is omitted, all targets are stopped.\nUse --tags to limit to targets bearing at least one of the listed tags (comma-separated).\nUse --json for machine-readable output.",
+        after_help = "Examples:\n  tukituki stop\n  tukituki stop api\n  tukituki stop --tags=backend"
     )]
     Stop {
         /// Specific target to stop (omit to stop all)
         target: Option<String>,
+        /// Only affect targets that have at least one of the given tags (comma or space separated)
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
     },
 
     /// Restart one or all targets
     #[command(
-        long_about = "Stop and then start each named target, in order.\n\nIf no target names are given, all configured targets are restarted.\nIf a process is not currently running, it is simply started.\nAll names are validated up front; if any is unknown the command exits\nbefore restarting anything. Use --json for machine-readable output.",
-        after_help = "Examples:\n  tukituki restart\n  tukituki restart api worker"
+        long_about = "Stop and then start each named target, in order.\n\nIf no target names are given, all configured targets are restarted.\nIf a process is not currently running, it is simply started.\nUse --tags to limit the operation to targets bearing at least one of the listed tags (comma-separated).\nAll names (or the tag-selected set) are validated up front; if any is unknown the command exits\nbefore restarting anything. Use --json for machine-readable output.",
+        after_help = "Examples:\n  tukituki restart\n  tukituki restart api worker\n  tukituki restart --tags=backend,api"
     )]
     Restart {
         /// Targets to restart (omit to restart all)
         targets: Vec<String>,
+        /// Only affect targets that have at least one of the given tags (comma or space separated)
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
     },
 
     /// Print recent logs for a target
@@ -191,11 +207,11 @@ pub fn run() -> ExitCode {
 
     match cli.command {
         Some(Command::Version) => commands::version::run(cli.json),
-        Some(Command::List) => commands::list::run(&cli),
-        Some(Command::Status { ref target }) => commands::status::run(&cli, target.as_deref()),
-        Some(Command::Start { ref target }) => commands::start::run(&cli, target.as_deref()),
-        Some(Command::Stop { ref target }) => commands::stop::run(&cli, target.as_deref()),
-        Some(Command::Restart { ref targets }) => commands::restart::run(&cli, targets),
+        Some(Command::List { ref tags }) => commands::list::run(&cli, tags),
+        Some(Command::Status { ref target, ref tags }) => commands::status::run(&cli, target.as_deref(), tags),
+        Some(Command::Start { ref target, ref tags }) => commands::start::run(&cli, target.as_deref(), tags),
+        Some(Command::Stop { ref target, ref tags }) => commands::stop::run(&cli, target.as_deref(), tags),
+        Some(Command::Restart { ref targets, ref tags }) => commands::restart::run(&cli, targets, tags),
         Some(Command::Logs {
             ref target,
             follow,

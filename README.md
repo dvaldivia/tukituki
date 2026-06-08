@@ -117,6 +117,7 @@ tukituki start api            # Start a single target
 tukituki stop                 # Stop all processes
 tukituki stop api             # Stop a single target
 tukituki restart api          # Restart a target
+tukituki restart --tags=backend  # Restart only tagged targets
 tukituki logs api             # Print last 100 buffered lines and exit
 tukituki logs api --follow    # Print buffered lines, then follow new output
 tukituki logs api --tail 50   # Print last 50 lines and exit
@@ -228,6 +229,7 @@ cleanup:
 | `cleanup` | no | Shell commands run after the process stops |
 | `otel` | no | Enable OpenTelemetry log collection for this target (`true`/`false`) |
 | `autorun` | no | Default `true`. Set to `false` to exclude the target from bulk auto-start (TUI launch, `tukituki start` with no name). It still shows up in the TUI and can be started manually by name. |
+| `tags` | no | List of tags (e.g. `["backend", "api"]`). Use `tukituki restart --tags=backend` (and same for `start`/`stop`/`status`/`list`) to operate only on targets that share at least one tag. |
 
 ### Grouping targets into folders
 

@@ -281,6 +281,161 @@ fn start_idempotent_when_already_running() {
         .success();
 }
 
+// ---- tags targeting --------------------------------------------------
+
+const BACKEND: &str = r#"
+name: backend
+command: sh
+args: ["-c", "echo BACKEND && sleep 60"]
+tags: [backend, api]
+"#;
+
+const WORKER: &str = r#"
+name: worker
+command: sh
+args: ["-c", "echo WORKER && sleep 60"]
+tags: [backend, worker]
+"#;
+
+const FRONT: &str = r#"
+name: front
+command: sh
+args: ["-c", "echo FRONT && sleep 60"]
+tags: [frontend]
+"#;
+
+#[test]
+fn restart_with_tags_targets_only_matching() {
+    let dir = fixture(&[
+        ("backend.yaml", BACKEND),
+        ("worker.yaml", WORKER),
+        ("front.yaml", FRONT),
+    ]);
+
+    // Start all first so we have PIDs to observe.
+    tt_in(dir.path()).arg("start").assert().success();
+    thread::sleep(Duration::from_millis(300));
+
+    let pid_b = pid_of(dir.path(), "backend");
+    let pid_w = pid_of(dir.path(), "worker");
+    let pid_f = pid_of(dir.path(), "front");
+
+    // Restart only backend-tagged (backend + worker).
+    tt_in(dir.path())
+        .args(["restart", "--tags=backend", "--json"])
+        .assert()
+        .success();
+    thread::sleep(Duration::from_millis(400));
+
+    let pid_b2 = pid_of(dir.path(), "backend");
+    let pid_w2 = pid_of(dir.path(), "worker");
+    let pid_f2 = pid_of(dir.path(), "front");
+
+    assert_ne!(pid_b, pid_b2, "backend should have restarted");
+    assert_ne!(pid_w, pid_w2, "worker should have restarted (shares backend tag)");
+    assert_eq!(pid_f, pid_f2, "front must be untouched");
+
+    // Cleanup
+    let _ = tt_in(dir.path()).args(["stop", "--tags=backend"]).assert();
+    let _ = tt_in(dir.path()).args(["stop", "front"]).assert();
+}
+
+#[test]
+fn start_with_tags_starts_only_matching_and_respects_explicit() {
+    let dir = fixture(&[
+        ("backend.yaml", BACKEND),
+        ("front.yaml", FRONT),
+    ]);
+
+    // Start only backend-tagged; front should remain untouched (and autorun isn't relevant here since explicit tag selection).
+    tt_in(dir.path())
+        .args(["start", "--tags=backend", "--json"])
+        .assert()
+        .success();
+    thread::sleep(Duration::from_millis(300));
+
+    // backend should be running
+    let st = tt_in(dir.path())
+        .args(["status", "backend", "--json"])
+        .assert()
+        .success();
+    let v: serde_json::Value = serde_json::from_str(&String::from_utf8(st.get_output().stdout.clone()).unwrap()).unwrap();
+    assert_eq!(v["status"], "running");
+
+    // front should not be running (no state or not running)
+    let stf = tt_in(dir.path())
+        .args(["status", "front", "--json"])
+        .assert()
+        .success();
+    let vf: serde_json::Value = serde_json::from_str(&String::from_utf8(stf.get_output().stdout.clone()).unwrap()).unwrap();
+    // status may be "unknown" or "stopped"; either way not running
+    assert_ne!(vf["status"], "running", "front must not have been started by --tags=backend");
+
+    let _ = tt_in(dir.path()).args(["stop", "--tags=backend"]).assert();
+}
+
+#[test]
+fn stop_with_tags_stops_only_matching() {
+    let dir = fixture(&[
+        ("backend.yaml", BACKEND),
+        ("worker.yaml", WORKER),
+        ("front.yaml", FRONT),
+    ]);
+
+    tt_in(dir.path()).arg("start").assert().success();
+    thread::sleep(Duration::from_millis(300));
+
+    // Stop only the frontend-tagged one.
+    tt_in(dir.path())
+        .args(["stop", "--tags=frontend"])
+        .assert()
+        .success();
+    thread::sleep(Duration::from_millis(300));
+
+    // front should be stopped; the backend ones still running.
+    let stf = tt_in(dir.path())
+        .args(["status", "front", "--json"])
+        .assert()
+        .success();
+    let vf: serde_json::Value = serde_json::from_str(&String::from_utf8(stf.get_output().stdout.clone()).unwrap()).unwrap();
+    assert_ne!(vf["status"], "running");
+
+    let stb = tt_in(dir.path())
+        .args(["status", "backend", "--json"])
+        .assert()
+        .success();
+    let vb: serde_json::Value = serde_json::from_str(&String::from_utf8(stb.get_output().stdout.clone()).unwrap()).unwrap();
+    assert_eq!(vb["status"], "running");
+
+    // Cleanup remaining
+    let _ = tt_in(dir.path()).args(["stop", "--tags=backend"]).assert();
+}
+
+#[test]
+fn tags_and_name_together_is_error() {
+    let dir = fixture(&[("b.yaml", BACKEND)]);
+    // restart
+    tt_in(dir.path())
+        .args(["restart", "b", "--tags=backend", "--json"])
+        .assert()
+        .failure();
+    // start
+    tt_in(dir.path())
+        .args(["start", "b", "--tags=backend", "--json"])
+        .assert()
+        .failure();
+    // stop
+    tt_in(dir.path())
+        .args(["stop", "b", "--tags=backend", "--json"])
+        .assert()
+        .failure();
+    // status
+    tt_in(dir.path())
+        .args(["status", "b", "--tags=backend", "--json"])
+        .assert()
+        .failure();
+}
+
 fn pid_of(dir: &Path, name: &str) -> i64 {
     let out = tt_in(dir)
         .args(["status", name, "--json"])

@@ -138,6 +138,20 @@ tukituki restart worker
 
 This is useful when you are iterating on a single service and do not want to cycle the others.
 
+## Targeting groups with tags
+
+If your targets are tagged in their `.run/*.yaml` files (e.g. `tags: [backend]`), you can operate on logical groups without naming every target:
+
+```sh
+tukituki restart --tags=backend
+tukituki stop --tags=frontend,worker
+tukituki start --tags=api
+tukituki status --tags=backend
+tukituki list --tags=backend
+```
+
+A target matches if it shares **at least one** of the tags you provide. You cannot mix explicit names and `--tags` on the same command.
+
 ---
 
 ## Integration with systemd or launchd

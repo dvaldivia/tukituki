@@ -4,7 +4,7 @@ use crate::cli::Cli;
 use crate::commands::start::ActionResult;
 use crate::runtime;
 
-pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
+pub fn run(cli: &Cli, target: Option<&str>, tags: &[String]) -> ExitCode {
     let run_dir = runtime::resolve_run_dir(cli);
     let state_dir = runtime::resolve_state_dir(cli);
     let project_root = runtime::resolve_project_root();
@@ -19,6 +19,15 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
     };
     if let Err(e) = mgr.attach_to_existing() {
         eprintln!("Warning: could not attach to existing processes: {e}");
+    }
+
+    if target.is_some() && !tags.is_empty() {
+        runtime::exit_error(
+            cli.json,
+            "cannot specify both a target name and --tags",
+            &[],
+        );
+        return ExitCode::from(2);
     }
 
     if let Some(name) = target {
@@ -44,6 +53,41 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    if !tags.is_empty() {
+        let selected = tukituki_config::filter_targets_by_tags(&targets, tags);
+        if selected.is_empty() {
+            runtime::exit_error(
+                cli.json,
+                &format!("no targets matched --tags {:?}", tags),
+                &[],
+            );
+            return ExitCode::from(1);
+        }
+        for t in &selected {
+            let _ = mgr.stop(&t.name);
+        }
+        // Report only the tag-selected set (do not touch virtual otel collector here).
+        if cli.json {
+            let results: Vec<ActionResult<'_>> = selected
+                .iter()
+                .map(|t| ActionResult {
+                    name: &t.name,
+                    status: "stopped",
+                })
+                .collect();
+            if let Err(e) = runtime::write_json(&results) {
+                runtime::exit_error(true, &format!("marshal JSON: {e}"), &[]);
+                return ExitCode::from(1);
+            }
+        } else {
+            for t in &selected {
+                println!("Stopped: {}", t.name);
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    // No tags, no single target: full stop (includes otel virtual if present).
     if let Err(e) = mgr.stop_all() {
         runtime::exit_error(cli.json, &format!("stop all: {e}"), &[]);
         return ExitCode::from(1);

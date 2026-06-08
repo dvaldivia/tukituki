@@ -53,6 +53,45 @@ The group name is derived from the subdirectory; it cannot be set in the YAML fi
 | `cleanup` | list of strings | no | `[]` | Shell commands run sequentially after the process stops. Useful for releasing ports or removing lock files. |
 | `otel` | bool | no | `false` | Enable OpenTelemetry log collection. When `true`, tukituki injects `OTEL_EXPORTER_OTLP_ENDPOINT` into the process and starts a bundled OTLP receiver. See the [OpenTelemetry guide]({{< relref "/docs/guides/opentelemetry" >}}). |
 | `autorun` | bool | no | `true` | When `false`, the target is loaded and visible in the TUI but is **not** included in bulk auto-start (`tukituki start` with no name, TUI launch, or restart-all of a stopped target). It can still be started explicitly by name (`tukituki start <name>`) or with the TUI's `S`/`r` keys. Use for opt-in helpers you don't want running by default. |
+| `tags` | list of strings | no | `[]` | Tags used to target subsets of processes from the CLI. Commands such as `tukituki restart --tags=backend`, `start --tags=...`, `stop --tags=...`, `status --tags=...`, and `list --tags=...` operate only on targets that share **at least one** tag with the requested set. Tags are exact, case-sensitive string matches. |
+
+## Targeting subsets with tags
+
+Use `tags` when you have logical groups (e.g. `backend`, `frontend`, `worker`, `db`) and want to act on them without listing every name:
+
+```yaml
+# .run/server.yaml
+name: server
+command: go
+workdir: backend
+tags: [backend, api]
+```
+
+```yaml
+# .run/worker.yaml
+name: worker
+command: go
+workdir: backend
+tags: [backend, worker]
+```
+
+```yaml
+# .run/ui.yaml
+name: ui
+command: npm
+tags: [frontend]
+```
+
+Then:
+
+```
+tukituki restart --tags=backend     # restarts server and worker
+tukituki stop --tags=frontend       # stops only the UI
+tukituki list --tags=backend        # shows just the backend-tagged targets
+tukituki status --tags=api,worker   # status for anything tagged api OR worker
+```
+
+A target matches if **any** of its tags appears in the `--tags` list (OR semantics). You can still name targets explicitly (`tukituki restart server`) — mixing names and `--tags` on the same command is an error.
 
 ## Annotated Example
 

@@ -45,6 +45,12 @@ pub struct RunTarget {
     /// default.
     #[serde(default = "default_autorun")]
     pub autorun: bool,
+    /// Optional tags for grouping / targeting. A target matches a
+    /// `--tags=foo,bar` filter if it shares at least one tag with the
+    /// requested set. Used by CLI commands (start/stop/restart/status/list
+    /// --tags=...) to operate on a subset without naming every target.
+    #[serde(default)]
+    pub tags: Vec<String>,
 
     // Runtime-only fields, never read from YAML.
     #[serde(skip)]
@@ -73,6 +79,7 @@ impl Default for RunTarget {
             cleanup: Vec::new(),
             otel: false,
             autorun: true,
+            tags: Vec::new(),
             group: String::new(),
             parse_error: String::new(),
             is_virtual: false,
@@ -180,6 +187,20 @@ pub fn load_targets<P: AsRef<Path>>(run_dir: P) -> io::Result<Vec<RunTarget>> {
 /// Reports whether any target in the list has `otel: true`.
 pub fn has_otel_target(targets: &[RunTarget]) -> bool {
     targets.iter().any(|t| t.otel)
+}
+
+/// Filter targets to those that share at least one tag with the requested
+/// set. If `requested` is empty, no filtering is applied (all targets
+/// returned). Matching is case-sensitive and uses exact string match.
+pub fn filter_targets_by_tags(targets: &[RunTarget], requested: &[String]) -> Vec<RunTarget> {
+    if requested.is_empty() {
+        return targets.to_vec();
+    }
+    targets
+        .iter()
+        .filter(|t| t.tags.iter().any(|tag| requested.contains(tag)))
+        .cloned()
+        .collect()
 }
 
 fn glob_yaml(dir: &Path) -> io::Result<Vec<PathBuf>> {
@@ -392,6 +413,55 @@ command: ./worker
             },
         ];
         assert!(has_otel_target(&some));
+    }
+
+    #[test]
+    fn load_targets_tags_default_empty() {
+        let dir = tempdir();
+        write_yaml(dir.path(), "svc.yaml", "name: svc\ncommand: echo\n");
+        let targets = load_targets(dir.path()).expect("load");
+        assert!(targets[0].tags.is_empty());
+    }
+
+    #[test]
+    fn load_targets_tags_list() {
+        let dir = tempdir();
+        write_yaml(
+            dir.path(),
+            "svc.yaml",
+            "name: svc\ncommand: echo\ntags: [backend, api]\n",
+        );
+        let targets = load_targets(dir.path()).expect("load");
+        assert_eq!(targets[0].tags, vec!["backend", "api"]);
+    }
+
+    #[test]
+    fn filter_targets_by_tags_empty_request_returns_all() {
+        let ts = vec![
+            RunTarget { name: "a".into(), tags: vec!["x".into()], ..Default::default() },
+            RunTarget { name: "b".into(), ..Default::default() },
+        ];
+        let out = filter_targets_by_tags(&ts, &[]);
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn filter_targets_by_tags_matches_any() {
+        let ts = vec![
+            RunTarget { name: "a".into(), tags: vec!["backend".into()], ..Default::default() },
+            RunTarget { name: "b".into(), tags: vec!["frontend".into(), "ui".into()], ..Default::default() },
+            RunTarget { name: "c".into(), tags: vec!["worker".into()], ..Default::default() },
+        ];
+        let out = filter_targets_by_tags(&ts, &["backend".into(), "worker".into()]);
+        let names: Vec<_> = out.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["a", "c"]);
+    }
+
+    #[test]
+    fn filter_targets_by_tags_no_match_yields_empty() {
+        let ts = vec![RunTarget { name: "a".into(), tags: vec!["x".into()], ..Default::default() }];
+        let out = filter_targets_by_tags(&ts, &["nope".into()]);
+        assert!(out.is_empty());
     }
 
     // Minimal in-tree tempdir helper so the config crate doesn't have to

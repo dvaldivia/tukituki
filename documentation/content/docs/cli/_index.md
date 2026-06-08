@@ -101,10 +101,12 @@ env:
 ## `tukituki list`
 
 ```sh
-tukituki list [--config <path>] [--run-dir <dir>]
+tukituki list [--config <path>] [--run-dir <dir>] [--tags <tags>]
 ```
 
 Print a tabular summary of all configured run targets and exit. Unlike `tukituki status`, this command reads only the YAML definitions in `--run-dir` — it does not inspect runtime state or require a state directory.
+
+Use `--tags` to show only targets that have at least one of the specified tags (comma-separated). This is useful when you have many targets and only care about a logical group (e.g. `backend`, `frontend`).
 
 **Output columns**
 
@@ -112,16 +114,27 @@ Print a tabular summary of all configured run targets and exit. Unlike `tukituki
 |--------|-------------|
 | `NAME` | Target name as defined in the YAML file |
 | `COMMAND` | Executable that will be run |
+| `TAGS` | Comma-separated list of tags from the YAML definition (or `-` if none) |
 | `DESCRIPTION` | Human-readable description from the YAML definition, if present |
 
 **Example**
 
 ```sh
 tukituki list
-# NAME        COMMAND   DESCRIPTION
-# api         go        HTTP API server
-# frontend    npm       React dev server
-# worker      go        Background job processor
+# NAME        COMMAND   TAGS       DESCRIPTION
+# api         go        backend    HTTP API server
+# frontend    npm       frontend   React dev server
+# worker      go        backend    Background job processor
+```
+
+**Filter by tags**
+
+```sh
+tukituki list --tags=backend
+# Only shows targets that have the "backend" tag
+
+tukituki list --tags=backend,worker
+# Shows targets that have "backend" OR "worker"
 ```
 
 ---
@@ -129,10 +142,12 @@ tukituki list
 ## `tukituki start`
 
 ```sh
-tukituki start [<name>] [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
+tukituki start [<name>] [--tags <tags>] [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
 ```
 
 Start targets headlessly, without opening the TUI. Processes are spawned in the background and log output is written to `<state-dir>/logs/<name>.log`.
+
+Use `--tags` (with no `<name>`) to start only the targets that have at least one of the specified tags. This is an explicit selection — targets will be started even if they have `autorun: false`.
 
 {{< callout type="info" >}}
 `tukituki start` is idempotent. It first attaches to existing state just like the TUI does, so targets that are already running are left untouched. Only targets in a `stopped` or `failed` state are (re)started. You can call `tukituki start` as many times as you like without double-starting a process.
@@ -144,7 +159,7 @@ Start targets headlessly, without opening the TUI. Processes are spawned in the 
 tukituki start
 ```
 
-Attaches to existing state, then spawns every target that is not already running. Returns immediately (exit 0) after all processes have been spawned. Exits non-zero if any target fails to start.
+Attaches to existing state, then spawns every target that is not already running (respecting `autorun: false`). Returns immediately (exit 0) after all processes have been spawned. Exits non-zero if any target fails to start.
 
 ### Start a specific target
 
@@ -153,6 +168,20 @@ tukituki start <name>
 ```
 
 Starts only the named target. `<name>` must match the `name` field in one of the YAML files under `--run-dir`.
+
+### Start targets matching tags
+
+```sh
+tukituki start --tags=backend
+```
+
+Starts only the targets that carry at least one of the listed tags. Multiple tags are ORed:
+
+```sh
+tukituki start --tags=backend,worker
+```
+
+You cannot combine a target name with `--tags` on the same command.
 
 **Examples**
 
@@ -163,6 +192,9 @@ tukituki start
 # Start only the "api" target
 tukituki start api
 
+# Start only backend-tagged targets
+tukituki start --tags=backend
+
 # Start against a custom state directory
 tukituki start --state-dir /tmp/myproject-state
 ```
@@ -172,10 +204,12 @@ tukituki start --state-dir /tmp/myproject-state
 ## `tukituki stop`
 
 ```sh
-tukituki stop [<name>] [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
+tukituki stop [<name>] [--tags <tags>] [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
 ```
 
 Stop one or all running targets gracefully.
+
+Use `--tags` (with no `<name>`) to stop only the targets that have at least one of the specified tags. The virtual `otel-errors` collector is only stopped during a full `tukituki stop` (no tags).
 
 **What it does, step by step:**
 
@@ -191,11 +225,27 @@ Stop one or all running targets gracefully.
 tukituki stop
 ```
 
+Stops every target (plus the `otel-errors` collector if it is running).
+
 ### Stop a specific target
 
 ```sh
 tukituki stop <name>
 ```
+
+### Stop targets matching tags
+
+```sh
+tukituki stop --tags=frontend
+```
+
+Stops only the targets matching the given tags. Multiple tags are ORed:
+
+```sh
+tukituki stop --tags=backend,worker
+```
+
+You cannot combine a target name with `--tags` on the same command.
 
 **Examples**
 
@@ -205,6 +255,9 @@ tukituki stop
 
 # Stop only the "worker" target
 tukituki stop worker
+
+# Stop only frontend-tagged targets
+tukituki stop --tags=frontend
 ```
 
 ---
@@ -212,24 +265,35 @@ tukituki stop worker
 ## `tukituki restart`
 
 ```sh
-tukituki restart <name> [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
+tukituki restart [<name>...] [--tags <tags>] [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
 ```
 
-Stop a specific target and then start it again. The log file for the target is truncated before the fresh start so logs from the previous run do not accumulate.
+Stop target(s) and then start them again. The log file for each restarted target is truncated before the fresh start so logs from the previous run do not accumulate.
+
+If no names are given, all targets are restarted. Use `--tags` to limit the operation to targets that have at least one of the specified tags.
 
 **What it does, step by step:**
 
-1. Runs the same stop sequence as `tukituki stop <name>` (SIGTERM → wait → SIGKILL → cleanup).
-2. Truncates `<state-dir>/logs/<name>.log`.
-3. Spawns the target process again.
+1. Runs the same stop sequence as `tukituki stop` (SIGTERM → wait → SIGKILL → cleanup).
+2. Truncates `<state-dir>/logs/<name>.log` for each target.
+3. Spawns the target process(es) again.
 
-`<name>` is required; restarting all targets at once is not supported.
+You cannot combine explicit target names with `--tags` on the same command.
 
-**Example**
+**Examples**
 
 ```sh
 # Restart the "frontend" target after a config change
 tukituki restart frontend
+
+# Restart everything
+tukituki restart
+
+# Restart only backend-tagged targets
+tukituki restart --tags=backend
+
+# Restart anything tagged backend or api
+tukituki restart --tags=backend,api
 ```
 
 ---
@@ -237,10 +301,12 @@ tukituki restart frontend
 ## `tukituki status`
 
 ```sh
-tukituki status [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
+tukituki status [<name>] [--tags <tags>] [--config <path>] [--run-dir <dir>] [--state-dir <dir>]
 ```
 
-Print a tabular summary of all targets and their current status, then exit.
+Print a tabular summary of targets and their current status, then exit.
+
+Use `--tags` (with no `<name>`) to show only targets that have at least one of the specified tags.
 
 **Output columns**
 
@@ -265,6 +331,15 @@ tukituki status
 # api         running   HTTP API server
 # worker      stopped   Background job processor
 # frontend    running   React dev server
+```
+
+**Filter by tags**
+
+```sh
+tukituki status --tags=backend
+# Shows status only for targets tagged "backend"
+
+tukituki status --tags=backend,api
 ```
 
 ---

@@ -10,7 +10,7 @@ use crate::cli::Cli;
 use crate::runtime;
 
 /// Status JSON shape — declaration order, omitempty semantics match Go's
-/// `statusEntry` in `cmd/tukituki/root.go`.
+/// `statusEntry` in `cmd/tukituki/root.go` (with optional `tags` appended).
 #[derive(Serialize)]
 struct StatusEntry<'a> {
     name: &'a str,
@@ -21,13 +21,15 @@ struct StatusEntry<'a> {
     pid: i32,
     #[serde(skip_serializing_if = "str::is_empty")]
     address: &'a str,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    tags: &'a [String],
 }
 
 fn is_zero_i32(v: &i32) -> bool {
     *v == 0
 }
 
-pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
+pub fn run(cli: &Cli, target: Option<&str>, tags: &[String]) -> ExitCode {
     let run_dir = runtime::resolve_run_dir(cli);
     let state_dir = runtime::resolve_state_dir(cli);
     let project_root = runtime::resolve_project_root();
@@ -45,11 +47,22 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
     }
 
     let mut targets = mgr.get_targets();
+    if target.is_some() && !tags.is_empty() {
+        runtime::exit_error(
+            cli.json,
+            "cannot specify both a target name and --tags",
+            &[],
+        );
+        return ExitCode::from(2);
+    }
     if let Some(name) = target {
         match runtime::find_target_or_die(&targets, name, cli.json) {
             Ok(t) => targets = vec![t],
             Err(code) => return code,
         }
+    } else if !tags.is_empty() {
+        targets = tukituki_config::filter_targets_by_tags(&targets, tags);
+        // For status, an empty result after tag filter is OK — just show nothing.
     }
 
     let statuses = mgr.get_all_statuses();
@@ -84,6 +97,7 @@ pub fn run(cli: &Cli, target: Option<&str>) -> ExitCode {
                     description: &t.description,
                     pid,
                     address: addr.as_str(),
+                    tags: &t.tags,
                 }
             })
             .collect();

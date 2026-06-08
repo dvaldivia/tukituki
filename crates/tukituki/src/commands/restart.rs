@@ -4,7 +4,7 @@ use crate::cli::Cli;
 use crate::commands::start::ActionResult;
 use crate::runtime;
 
-pub fn run(cli: &Cli, args: &[String]) -> ExitCode {
+pub fn run(cli: &Cli, args: &[String], tags: &[String]) -> ExitCode {
     let run_dir = runtime::resolve_run_dir(cli);
     let state_dir = runtime::resolve_state_dir(cli);
     let project_root = runtime::resolve_project_root();
@@ -21,14 +21,35 @@ pub fn run(cli: &Cli, args: &[String]) -> ExitCode {
         eprintln!("Warning: could not attach to existing processes: {e}");
     }
 
-    let names: Vec<String> = if args.is_empty() {
-        targets.iter().map(|t| t.name.clone()).collect()
-    } else {
+    if !tags.is_empty() && !args.is_empty() {
+        runtime::exit_error(
+            cli.json,
+            "cannot specify both target names and --tags",
+            &[],
+        );
+        return ExitCode::from(2);
+    }
+
+    let names: Vec<String> = if !args.is_empty() {
         args.to_vec()
+    } else if !tags.is_empty() {
+        let filtered = tukituki_config::filter_targets_by_tags(&targets, tags);
+        if filtered.is_empty() {
+            runtime::exit_error(
+                cli.json,
+                &format!("no targets matched --tags {:?}", tags),
+                &[],
+            );
+            return ExitCode::from(1);
+        }
+        filtered.into_iter().map(|t| t.name.clone()).collect()
+    } else {
+        targets.iter().map(|t| t.name.clone()).collect()
     };
 
     // Validate every name up front so a typo on the last arg doesn't
     // leave earlier targets bounced. Matches Go behaviour.
+    // (Tag-selected names are already known to exist; explicit names need checks.)
     for name in &names {
         if let Err(code) = runtime::find_target_or_die(&targets, name, cli.json) {
             return code;
