@@ -1,6 +1,6 @@
 //! `.env` parsing — port of `internal/config/dotenv.go`.
 //!
-//! Behaviour matches the Go module exactly:
+//! Parse behaviour matches the Go module exactly:
 //! - blank lines and `#`-prefixed lines are ignored
 //! - optional `export ` prefix is stripped
 //! - values may be unquoted, double-quoted, or single-quoted
@@ -10,36 +10,25 @@
 //! - missing file returns `Ok(None)` (analogue of Go's `nil, nil`)
 
 use std::collections::BTreeMap;
-use std::env;
 use std::fs;
 use std::io;
 use std::path::Path;
 
-/// `LoadDotEnv` — read `.env` from `project_root` and merge unset keys
-/// into the running process's environment. Returns the parsed map for
-/// callers that want to feed it back into [`crate::expand_env`].
+/// `LoadDotEnv` — read and parse `.env` from `project_root`. Returns the
+/// map for [`crate::expand_env`] expansion of `${VAR}` references in
+/// run-target YAML.
 ///
-/// Shell exports always win over `.env`, matching godotenv.Load semantics.
+/// This deliberately does NOT mutate the running process's environment.
+/// The process manager overlays the `.env` file onto each child at spawn
+/// time instead (re-reading it on every start/restart, so edits apply to
+/// the next restart without relaunching tukituki). Keys the invoking
+/// shell already exports always win over `.env`, matching godotenv.Load
+/// semantics — and that check stays accurate precisely because we never
+/// pollute our own environment here.
 pub fn load_dotenv<P: AsRef<Path>>(
     project_root: P,
 ) -> io::Result<Option<BTreeMap<String, String>>> {
-    let path = project_root.as_ref().join(".env");
-    let Some(vars) = parse_dotenv(&path)? else {
-        return Ok(None);
-    };
-    for (k, v) in &vars {
-        if env::var_os(k).is_some() {
-            continue;
-        }
-        // SAFETY: setting env vars at startup, before threads. The
-        // Go binary does this too — the process manager spawns
-        // children with the full process env, so seeding it makes
-        // .env keys visible to every target without per-yaml mapping.
-        unsafe {
-            env::set_var(k, v);
-        }
-    }
-    Ok(Some(vars))
+    parse_dotenv(project_root.as_ref().join(".env"))
 }
 
 /// `ParseDotEnv` — read and parse a `.env` file.
@@ -218,52 +207,21 @@ OTHER=123
 
     // ---- LoadDotEnv ----------------------------------------------------
 
-    // These tests mutate process env. They are explicitly serialized via a
-    // module-level Mutex because cargo test runs them in parallel by default,
-    // and concurrent env::set_var/env::var checks would race.
-    use std::sync::Mutex;
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
-    fn load_dotenv_sets_unset_vars() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let key = "TUKITUKI_TEST_NEW_KEY";
-        // SAFETY: serialized with ENV_LOCK; we own this key in tests.
-        unsafe {
-            env::remove_var(key);
-        }
+    fn load_dotenv_returns_map_without_touching_process_env() {
+        let key = "TUKITUKI_TEST_NO_SEED_KEY";
         let (_d, path) = write_env(&format!("{key}=fromdotenv\n"));
         let root = path.parent().unwrap().to_path_buf();
 
         let vars = load_dotenv(&root).unwrap().unwrap();
         assert_env(&vars, key, "fromdotenv");
-        assert_eq!(env::var(key).unwrap(), "fromdotenv");
-
-        unsafe {
-            env::remove_var(key);
-        }
-    }
-
-    #[test]
-    fn load_dotenv_does_not_override_existing_vars() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let key = "TUKITUKI_TEST_EXISTING";
-        // SAFETY: serialized with ENV_LOCK.
-        unsafe {
-            env::set_var(key, "fromshell");
-        }
-        let (_d, path) = write_env(&format!("{key}=fromdotenv\n"));
-        let root = path.parent().unwrap().to_path_buf();
-
-        let vars = load_dotenv(&root).unwrap().unwrap();
-        // Returned map still reflects .env (used downstream for expansion).
-        assert_env(&vars, key, "fromdotenv");
-        // But the process env keeps the pre-existing value (shell wins).
-        assert_eq!(env::var(key).unwrap(), "fromshell");
-
-        unsafe {
-            env::remove_var(key);
-        }
+        // The child-spawn overlay in tukituki-process relies on our own
+        // env staying clean: a seeded key would masquerade as a shell
+        // export and pin the first-loaded value forever.
+        assert!(
+            std::env::var_os(key).is_none(),
+            "load_dotenv must not set process env vars"
+        );
     }
 
     #[test]

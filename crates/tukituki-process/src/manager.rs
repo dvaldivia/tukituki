@@ -426,9 +426,17 @@ impl Manager {
                 }
             }
 
-            // Env: parent env, then target overlay. Command::env replaces
-            // matching keys, which matches Go's append-based semantics.
+            // Env: parent env, then the project root's `.env` for keys
+            // the invoking shell doesn't already export (shell wins),
+            // then the target overlay. Command::env replaces matching
+            // keys, which matches Go's append-based semantics. `.env` is
+            // re-read on every spawn so a restart picks up edits without
+            // relaunching tukituki; a file that fails to read is treated
+            // as absent here — the CLI/TUI load path already warned.
             for (k, v) in std::env::vars() {
+                cmd.env(k, v);
+            }
+            for (k, v) in project_dotenv(&inner.project_root) {
                 cmd.env(k, v);
             }
             for (k, v) in &target.env {
@@ -929,6 +937,23 @@ impl Manager {
             }
         }
 
+        // Effective `.env` overlay: what a spawn right now would apply.
+        // Keys shadowed by the target's own env block are omitted.
+        let dotenv: Vec<(String, String)> = project_dotenv(&project_root)
+            .into_iter()
+            .filter(|(k, _)| !target.env.contains_key(k))
+            .collect();
+        if !dotenv.is_empty() {
+            let _ = writeln!(out);
+            let _ = writeln!(
+                out,
+                ".env overlay (re-read at each spawn; shell exports win):"
+            );
+            for (k, v) in dotenv {
+                let _ = writeln!(out, "  {k}={v}");
+            }
+        }
+
         if !target.cleanup.is_empty() {
             let _ = writeln!(out);
             let _ = writeln!(out, "Cleanup commands:");
@@ -992,9 +1017,16 @@ impl Manager {
             Some(project_root.join(&target.workdir))
         };
 
+        // Cleanup commands see the same `.env` overlay as the target
+        // itself, so they can reference ports/paths defined there.
+        let dotenv = project_dotenv(&project_root);
+
         for cmd_str in &target.cleanup {
             let mut cmd = Command::new(&shell);
             cmd.arg("-l").arg("-c").arg(cmd_str);
+            for (k, v) in &dotenv {
+                cmd.env(k, v);
+            }
             if let Some(w) = &workdir {
                 cmd.current_dir(w);
             }
@@ -1089,6 +1121,21 @@ fn append_locked(inner: &mut Inner, name: &str, line: &str) {
         }
         *subs = alive;
     }
+}
+
+/// The `.env` overlay applied to every spawned child: keys from the
+/// project root's `.env` that the invoking shell does not already
+/// export. Read fresh on each call so a restart sees current values.
+/// An unreadable or absent file yields an empty overlay — parse
+/// warnings are the load path's job, spawning stays resilient.
+fn project_dotenv(project_root: &Path) -> Vec<(String, String)> {
+    let vars = match tukituki_config::parse_dotenv(project_root.join(".env")) {
+        Ok(Some(v)) => v,
+        _ => return Vec::new(),
+    };
+    vars.into_iter()
+        .filter(|(k, _)| std::env::var_os(k).is_none())
+        .collect()
 }
 
 /// `groupAlive` analogue: any member of the process group still around?

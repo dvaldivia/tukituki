@@ -112,6 +112,7 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // `input_paused` flag — `action_edit` flips that flag while
     // `$EDITOR` runs so the editor child isn't fighting the reader
     // for stdin on the same PTY fd.
+    let project_root_for_watch = project_root.clone();
     let mut app = App::new(targets, manager, run_dir.clone(), project_root);
     // Hand the App a sender so action handlers can offload blocking
     // manager calls (stop/start/restart) to a worker thread and post
@@ -143,10 +144,12 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
             }
         })?;
 
-    // File-watcher: any *.yaml/*.yml change under run_dir triggers a
-    // reload event. Debounced inside notify-debouncer-mini.
+    // File-watcher: any *.yaml/*.yml change under run_dir — or an edit
+    // to the project root's `.env` — triggers a reload event, so target
+    // definitions re-expand against current values. Debounced inside
+    // notify-debouncer-mini.
     let reload_tx = tx.clone();
-    let _watcher = spawn_fs_watcher(&run_dir, reload_tx).ok();
+    let _watcher = spawn_fs_watcher(&run_dir, &project_root_for_watch, reload_tx).ok();
 
     // State-file watcher: an external `tukituki start/stop/restart`
     // updates `<state_dir>/state.json` behind our back. Without this
@@ -396,6 +399,7 @@ fn spawn_state_file_watcher(
 
 fn spawn_fs_watcher(
     run_dir: &std::path::Path,
+    project_root: &std::path::Path,
     tx: mpsc::SyncSender<AppEvent>,
 ) -> notify::Result<notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>> {
     let mut debouncer = notify_debouncer_mini::new_debouncer(
@@ -404,7 +408,7 @@ fn spawn_fs_watcher(
             if let Ok(events) = events {
                 let interesting = events.iter().any(|e| {
                     let ext = e.path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                    ext == "yaml" || ext == "yml"
+                    ext == "yaml" || ext == "yml" || e.path.file_name().is_some_and(|n| n == ".env")
                 });
                 if interesting {
                     let _ = tx.send(AppEvent::FileChange);
@@ -415,5 +419,11 @@ fn spawn_fs_watcher(
     debouncer
         .watcher()
         .watch(run_dir, notify::RecursiveMode::Recursive)?;
+    // Non-recursive so we only see the project root's own entries (the
+    // `.env` filter above ignores everything else). Best-effort: a root
+    // we can't watch shouldn't take down the run-dir watcher.
+    let _ = debouncer
+        .watcher()
+        .watch(project_root, notify::RecursiveMode::NonRecursive);
     Ok(debouncer)
 }

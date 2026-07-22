@@ -436,6 +436,37 @@ fn tags_and_name_together_is_error() {
         .failure();
 }
 
+// ---- .env pickup -----------------------------------------------------
+
+#[test]
+fn start_applies_project_dotenv_with_shell_precedence() {
+    let dir = fixture(&[("envy.yaml", "name: envy\ncommand: env\n")]);
+    fs::write(
+        dir.path().join(".env"),
+        "TT_LIFECYCLE_FROM_DOTENV=dotenv_value\nTT_LIFECYCLE_SHELL_WINS=dotenv_value\n",
+    )
+    .unwrap();
+
+    // The var set on the tukituki process plays the role of a shell
+    // export; it must beat the .env entry of the same name.
+    tt_in(dir.path())
+        .env("TT_LIFECYCLE_SHELL_WINS", "shell_value")
+        .args(["start", "envy"])
+        .assert()
+        .success();
+    thread::sleep(Duration::from_millis(500));
+
+    let log = fs::read_to_string(dir.path().join(".tukituki/logs/envy.log")).unwrap();
+    assert!(
+        log.contains("TT_LIFECYCLE_FROM_DOTENV=dotenv_value"),
+        "unmapped .env var must reach the child: {log:?}"
+    );
+    assert!(
+        log.contains("TT_LIFECYCLE_SHELL_WINS=shell_value"),
+        "shell export must win over .env: {log:?}"
+    );
+}
+
 fn pid_of(dir: &Path, name: &str) -> i64 {
     let out = tt_in(dir)
         .args(["status", name, "--json"])

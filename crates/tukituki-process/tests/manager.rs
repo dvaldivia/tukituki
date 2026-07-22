@@ -365,6 +365,90 @@ fn set_otel_config_stolen_port_fallback() {
     assert!(assigned > 0, "fallback should pick a fresh port");
 }
 
+// ---- .env overlay ----------------------------------------------------
+
+/// Target that dumps its environment into its log.
+fn env_dump_target(name: &str) -> RunTarget {
+    RunTarget {
+        name: name.into(),
+        command: "env".into(),
+        ..Default::default()
+    }
+}
+
+/// Read the child's log via the public dump_log API.
+fn child_log(m: &Manager, name: &str) -> String {
+    let dest_dir = tempfile::tempdir().unwrap();
+    let dest = dest_dir.path().join("dump.log");
+    m.dump_log(name, &dest).expect("dump_log");
+    fs::read_to_string(&dest).unwrap()
+}
+
+#[test]
+fn dotenv_reaches_spawned_child_without_yaml_mapping() {
+    let (dir, m) = new_test_manager(vec![env_dump_target("envy")]);
+    fs::write(
+        dir.path().join(".env"),
+        "TUKITUKI_TEST_DOTENV_PLAIN=from_dotenv\n",
+    )
+    .unwrap();
+
+    m.start("envy").expect("start");
+    thread::sleep(Duration::from_millis(400));
+
+    let log = child_log(&m, "envy");
+    assert!(
+        log.contains("TUKITUKI_TEST_DOTENV_PLAIN=from_dotenv"),
+        "child env missing .env var: {log:?}"
+    );
+}
+
+#[test]
+fn target_env_overrides_dotenv() {
+    let mut t = env_dump_target("envy");
+    t.env
+        .insert("TUKITUKI_TEST_DOTENV_SHADOWED".into(), "from_target".into());
+    let (dir, m) = new_test_manager(vec![t]);
+    fs::write(
+        dir.path().join(".env"),
+        "TUKITUKI_TEST_DOTENV_SHADOWED=from_dotenv\n",
+    )
+    .unwrap();
+
+    m.start("envy").expect("start");
+    thread::sleep(Duration::from_millis(400));
+
+    let log = child_log(&m, "envy");
+    assert!(
+        log.contains("TUKITUKI_TEST_DOTENV_SHADOWED=from_target"),
+        "target env block must win over .env: {log:?}"
+    );
+}
+
+#[test]
+fn restart_rereads_dotenv() {
+    let (dir, m) = new_test_manager(vec![env_dump_target("envy")]);
+    let env_path = dir.path().join(".env");
+    fs::write(&env_path, "TUKITUKI_TEST_DOTENV_FRESH=first\n").unwrap();
+
+    m.start("envy").expect("start");
+    thread::sleep(Duration::from_millis(400));
+    assert!(child_log(&m, "envy").contains("TUKITUKI_TEST_DOTENV_FRESH=first"));
+
+    // Edit .env while tukituki keeps running; the next spawn must see
+    // the new value — this is the whole point of reading at spawn time
+    // instead of seeding the manager's own environment once.
+    fs::write(&env_path, "TUKITUKI_TEST_DOTENV_FRESH=second\n").unwrap();
+    m.restart("envy").expect("restart");
+    thread::sleep(Duration::from_millis(400));
+
+    let log = child_log(&m, "envy");
+    assert!(
+        log.contains("TUKITUKI_TEST_DOTENV_FRESH=second"),
+        "restart must re-read .env: {log:?}"
+    );
+}
+
 mod tukituki_process_test_helpers {
     /// Local helper: allocate a free TCP port without depending on the
     /// crate's private otel_port module.

@@ -251,6 +251,17 @@ The arrow flips from `▶` to `▼` when the folder is expanded. Only one level 
 
 Each process is started via your login shell (`$SHELL -l -c "..."`) so tools managed by nvm, pyenv, rbenv, Homebrew, etc. are available exactly as they are in your terminal. Processes are **detached from the tukituki process group** — they keep running if you close the TUI with `q`.
 
+### `.env` files
+
+If a `.env` file exists in the project root (the directory you run `tukituki` from), every key in it is applied to every spawned process automatically — no need to mirror them through per-target `env:` blocks. Precedence, lowest to highest:
+
+1. your shell's environment (inherited)
+2. `.env` — only fills in keys the shell doesn't already export
+3. the target's `env:` block
+4. OTel injection (`OTEL_EXPORTER_OTLP_ENDPOINT` etc., when `otel: true`)
+
+The file is re-read on every start/restart, so editing `.env` and restarting a target picks up the new values without relaunching tukituki — the TUI also reloads target definitions when `.env` changes. Cleanup commands run with the same `.env` overlay. `${VAR}` references inside `.run/*.yaml` are additionally expanded from `.env` at load time; the target's details pane in the TUI shows exactly which `.env` keys would be applied.
+
 ### Cleanup commands
 
 `cleanup` entries run via `$SHELL -l -c` after the process is stopped, in the target's `workdir` if set. Use them to release ports or kill stray children:
