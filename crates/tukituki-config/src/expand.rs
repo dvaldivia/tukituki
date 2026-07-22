@@ -1,7 +1,9 @@
 //! `${VAR}` / `$VAR` expansion across run-target fields.
 //!
 //! Mirrors Go's `os.Expand` semantics so a YAML+env tree resolved by the
-//! Rust binary produces the same field values as the Go binary.
+//! Rust binary produces the same field values as the Go binary — with one
+//! deliberate extension: bash-style `${VAR:-default}` fallbacks, which
+//! os.Expand would mangle into an empty string.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -47,9 +49,11 @@ pub fn expand_env(
         .collect()
 }
 
-/// Faithful port of Go's `os.Expand`:
+/// Faithful port of Go's `os.Expand`, plus `:-` fallbacks:
 ///
 /// - `${NAME}` → `lookup("NAME")` (empty string when unset)
+/// - `${NAME:-default}` → `lookup("NAME")`, or the literal default text
+///   when the variable is unset *or empty* (bash `:-` semantics)
 /// - `$NAME`  → `lookup("NAME")` where NAME is `[A-Za-z0-9_]+`
 /// - `$<special>` → single-char shell special var (`*`, `#`, `?`, `0`–`9`, etc.)
 /// - `$$` is *not* special in Go's os.Expand — but `$<non-alphanum>` leaves
@@ -70,7 +74,7 @@ fn expand<F: Fn(&str) -> Option<String>>(s: &str, lookup: &F) -> String {
                 // Bare `$` with nothing usable after — emit literally.
                 out.push('$');
             } else {
-                out.push_str(&lookup(name).unwrap_or_default());
+                out.push_str(&resolve(name, lookup));
             }
             i += 1 + w;
         } else {
@@ -79,6 +83,22 @@ fn expand<F: Fn(&str) -> Option<String>>(s: &str, lookup: &F) -> String {
         }
     }
     out
+}
+
+/// Resolve one extracted name, honouring `${NAME:-default}`.
+///
+/// A `:-` can only reach us from the braced form — unbraced `$NAME`
+/// parsing stops at the colon — so its presence is unambiguous. The
+/// default is taken literally: no nested expansion, everything up to the
+/// closing brace (base64 `=` padding, URLs, email addresses all survive).
+fn resolve<F: Fn(&str) -> Option<String>>(name: &str, lookup: &F) -> String {
+    if let Some((var, default)) = name.split_once(":-") {
+        return match lookup(var) {
+            Some(v) if !v.is_empty() => v,
+            _ => default.to_string(),
+        };
+    }
+    lookup(name).unwrap_or_default()
 }
 
 /// Returns `(name, consumed)` for a `$` prefix.
@@ -221,6 +241,74 @@ mod tests {
         unsafe {
             env::remove_var(key);
         }
+    }
+
+    #[test]
+    fn default_used_when_var_unset() {
+        let targets = vec![target_with_env(&[("A", "${MISSING_VAR:-fallback}")])];
+        let result = expand_env(targets, Some(&map(&[("UNRELATED", "x")])));
+        assert_eq!(result[0].env["A"], "fallback");
+    }
+
+    #[test]
+    fn default_ignored_when_var_set() {
+        let targets = vec![target_with_env(&[("A", "${PRESENT:-fallback}")])];
+        let result = expand_env(targets, Some(&map(&[("PRESENT", "real")])));
+        assert_eq!(result[0].env["A"], "real");
+    }
+
+    #[test]
+    fn default_used_when_var_empty() {
+        // bash `:-` semantics: empty counts as unset.
+        let targets = vec![target_with_env(&[("A", "${EMPTY_VAR:-fallback}")])];
+        let result = expand_env(targets, Some(&map(&[("EMPTY_VAR", "")])));
+        assert_eq!(result[0].env["A"], "fallback");
+    }
+
+    #[test]
+    fn default_falls_back_to_os_env_before_default() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let key = "TEST_DEFAULT_OS_FALLBACK_RUST";
+        unsafe {
+            env::set_var(key, "fromshell");
+        }
+        let targets = vec![target_with_env(&[(
+            "A",
+            "${TEST_DEFAULT_OS_FALLBACK_RUST:-fallback}",
+        )])];
+        let result = expand_env(targets, Some(&map(&[("UNRELATED", "x")])));
+        assert_eq!(result[0].env["A"], "fromshell");
+        unsafe {
+            env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn default_survives_awkward_literals() {
+        // Real-world defaults: base64 with `=` padding, addresses, and
+        // an empty default. Everything up to `}` is the default text.
+        let targets = vec![target_with_env(&[
+            (
+                "KEY",
+                "${ENC_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}",
+            ),
+            ("FROM", "${FROM_ADDR:-noreply@mail.example.com}"),
+            ("BLANK", "${NOPE:-}"),
+        ])];
+        let result = expand_env(targets, Some(&map(&[("UNRELATED", "x")])));
+        assert_eq!(
+            result[0].env["KEY"],
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+        );
+        assert_eq!(result[0].env["FROM"], "noreply@mail.example.com");
+        assert_eq!(result[0].env["BLANK"], "");
+    }
+
+    #[test]
+    fn default_embedded_in_larger_string() {
+        let targets = vec![target_with_env(&[("URL", "https://${HOST:-localhost}:7614")])];
+        let result = expand_env(targets, Some(&map(&[("UNRELATED", "x")])));
+        assert_eq!(result[0].env["URL"], "https://localhost:7614");
     }
 
     #[test]

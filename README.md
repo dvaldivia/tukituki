@@ -262,6 +262,14 @@ If a `.env` file exists in the project root (the directory you run `tukituki` fr
 
 The file is re-read on every start/restart, so editing `.env` and restarting a target picks up the new values without relaunching tukituki — the TUI also reloads target definitions when `.env` changes. Cleanup commands run with the same `.env` overlay. `${VAR}` references inside `.run/*.yaml` are additionally expanded from `.env` at load time; the target's details pane in the TUI shows exactly which `.env` keys would be applied.
 
+`${VAR:-default}` is supported in `.run/*.yaml` values: when `VAR` is unset (or set but empty) in both `.env` and the shell, the literal default text is used instead. Use it to keep dev defaults versioned in the yaml while `.env` stays gitignored:
+
+```yaml
+env:
+  MAILGUN_REGION: ${MAILGUN_REGION:-us}
+  SECRET_ENC_KEY: ${SECRET_ENC_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+```
+
 ### Cleanup commands
 
 `cleanup` entries run via `$SHELL -l -c` after the process is stopped, in the target's `workdir` if set. Use them to release ports or kill stray children:
