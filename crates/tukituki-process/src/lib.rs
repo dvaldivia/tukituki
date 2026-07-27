@@ -11,6 +11,7 @@
 //! and Phase 5 respectively.
 
 mod manager;
+mod otel_pids;
 mod otel_port;
 mod shell;
 mod tailer;

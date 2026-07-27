@@ -5,7 +5,7 @@
 //! state directories and each one writes to its own tempdir.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -500,6 +500,102 @@ fn orphan_sweep_ignores_targets_that_still_exist() {
     assert!(!m.has_recorded_process("never-started"));
 
     m.stop_all().expect("stop_all");
+}
+
+// ---- superseded otel collectors --------------------------------------
+
+/// Read the collector ledger the manager maintains at
+/// `<state_dir>/otel-pids`.
+fn ledger(dir: &TempDir) -> Vec<i32> {
+    let p = dir.path().join(".tukituki/otel-pids");
+    fs::read_to_string(p)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().parse::<i32>().ok())
+        .collect()
+}
+
+fn write_ledger(dir: &TempDir, pids: &[i32]) {
+    let state_dir = dir.path().join(".tukituki");
+    fs::create_dir_all(&state_dir).unwrap();
+    let body: String = pids.iter().map(|p| format!("{p}\n")).collect();
+    fs::write(state_dir.join("otel-pids"), body).unwrap();
+}
+
+#[test]
+fn sweep_reaps_a_superseded_collector() {
+    // state.json holds one `otel-errors` entry, so recording a
+    // replacement collector forgets the previous PID. When that PID is
+    // still alive it becomes unreachable and keeps its OTLP port — the
+    // real symptom was several collectors per project, the oldest days
+    // old. The ledger is what lets the sweep still find it.
+    let (dir, m) = new_test_manager(vec![sleep_target("ghost")]);
+    m.start("ghost").expect("start");
+    thread::sleep(Duration::from_millis(250));
+
+    let pid = m.get_all_process_states()["ghost"].pid;
+    assert!(pid > 0);
+
+    // Model a collector this project spawned that state no longer names.
+    write_ledger(&dir, &[pid]);
+    m.sweep_stale_otel_collectors();
+    thread::sleep(Duration::from_millis(300));
+
+    assert!(
+        !Path::new(&format!("/proc/{pid}")).exists(),
+        "superseded collector (pid {pid}) must be reaped"
+    );
+    assert!(
+        ledger(&dir).is_empty(),
+        "reaped pid must be dropped from the ledger, got {:?}",
+        ledger(&dir)
+    );
+}
+
+#[test]
+fn sweep_spares_the_currently_tracked_collector() {
+    // The sweep must never kill the collector state.json actively
+    // points at — stop_otel_collector owns that one. Getting this wrong
+    // would tear down the live collector on every start.
+    let (dir, m) = new_test_manager(vec![sleep_target(tukituki_process::OTEL_TARGET_NAME)]);
+    m.start(tukituki_process::OTEL_TARGET_NAME).expect("start");
+    thread::sleep(Duration::from_millis(250));
+
+    let pid = m.get_all_process_states()[tukituki_process::OTEL_TARGET_NAME].pid;
+    assert!(pid > 0);
+
+    write_ledger(&dir, &[pid]);
+    m.sweep_stale_otel_collectors();
+    thread::sleep(Duration::from_millis(250));
+
+    assert!(
+        Path::new(&format!("/proc/{pid}")).exists(),
+        "the tracked collector (pid {pid}) must survive the sweep"
+    );
+    assert_eq!(
+        ledger(&dir),
+        vec![pid],
+        "the tracked collector stays in the ledger"
+    );
+
+    m.stop(tukituki_process::OTEL_TARGET_NAME).ok();
+}
+
+#[test]
+fn sweep_prunes_dead_ledger_entries_without_signalling() {
+    // A PID that already exited should just fall out of the ledger.
+    // Left in place the file would grow forever, and a recycled PID
+    // could eventually be signalled by mistake.
+    let (dir, m) = new_test_manager(vec![sleep_target("unused")]);
+    write_ledger(&dir, &[9_999_992]);
+
+    m.sweep_stale_otel_collectors();
+
+    assert!(
+        ledger(&dir).is_empty(),
+        "dead pid should be pruned, got {:?}",
+        ledger(&dir)
+    );
 }
 
 mod tukituki_process_test_helpers {

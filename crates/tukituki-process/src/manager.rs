@@ -27,6 +27,7 @@ use nix::unistd::Pid;
 use tukituki_config::RunTarget;
 use tukituki_state::{ProcessState, State, Status, is_alive};
 
+use crate::otel_pids;
 use crate::otel_port;
 use crate::shell::build_shell_cmd;
 use crate::tailer;
@@ -235,7 +236,19 @@ impl Manager {
             return Ok(());
         }
 
+        // We are about to record a new collector under the single
+        // `otel-errors` key, which forgets whatever PID was there
+        // before. If that PID is in fact still running — the recorded
+        // status drifted from reality, or state.json was reset — it
+        // would become unreachable and hold its OTLP port forever.
+        // Reap it now, while we still know about it.
+        self.sweep_stale_otel_collectors();
+
         self.start_target(target)?;
+        if let Some(pid) = self.recorded_pid(crate::OTEL_TARGET_NAME) {
+            let state_dir = self.lock().state_dir.clone();
+            otel_pids::record(&state_dir, pid);
+        }
 
         // Restart running otel:true children if the port drifted from
         // the previously-persisted value, so they re-read
@@ -255,11 +268,73 @@ impl Manager {
             .state
             .processes
             .contains_key(crate::OTEL_TARGET_NAME);
+        // Sweep first: earlier collectors are ledger-only once
+        // `state.json` has moved on, so a `recorded == false` early
+        // return would leave them running.
+        self.sweep_stale_otel_collectors();
         if !recorded {
+            let state_dir = self.lock().state_dir.clone();
+            otel_pids::remove(&state_dir);
             return Ok(());
         }
-        otel_port::remove(&self.lock().state_dir);
-        self.stop(crate::OTEL_TARGET_NAME)
+        {
+            let state_dir = self.lock().state_dir.clone();
+            otel_port::remove(&state_dir);
+        }
+        let res = self.stop(crate::OTEL_TARGET_NAME);
+        let state_dir = self.lock().state_dir.clone();
+        otel_pids::remove(&state_dir);
+        res
+    }
+
+    /// PID recorded in state for `name`, if any.
+    fn recorded_pid(&self, name: &str) -> Option<i32> {
+        self.lock()
+            .state
+            .processes
+            .get(name)
+            .map(|ps| ps.pid)
+            .filter(|p| *p > 0)
+    }
+
+    /// SIGTERM/SIGKILL every collector this project spawned that is
+    /// still alive but is no longer the one `state.json` points at.
+    ///
+    /// The ledger is the only record of superseded collectors, and it is
+    /// scoped to this project's state directory — so this can never
+    /// reach into another project's processes, which matters because the
+    /// collector's `--notify-socket` argument is relative and therefore
+    /// identical everywhere.
+    pub fn sweep_stale_otel_collectors(&self) {
+        let (state_dir, current) = {
+            let inner = self.lock();
+            let cur = inner
+                .state
+                .processes
+                .get(crate::OTEL_TARGET_NAME)
+                .map(|ps| ps.pid)
+                .filter(|p| *p > 0);
+            (inner.state_dir.clone(), cur)
+        };
+
+        let mut survivors: Vec<i32> = Vec::new();
+        for pid in otel_pids::load(&state_dir) {
+            // Never signal the collector we are actively tracking:
+            // stop_otel_collector owns that one via `stop`.
+            if Some(pid) == current {
+                survivors.push(pid);
+                continue;
+            }
+            if !group_alive(pid) {
+                continue; // already dead — drop it from the ledger
+            }
+            self.append_log_line(
+                crate::OTEL_TARGET_NAME,
+                &format!("otel-errors: reaping superseded collector pid {pid}"),
+            );
+            kill_group_then_leader(pid);
+        }
+        otel_pids::write(&state_dir, &survivors);
     }
 
     /// Build the virtual `otel-errors` RunTarget for the current
@@ -628,6 +703,14 @@ impl Manager {
         if has_otel {
             otel_port::remove(&self.lock().state_dir);
             let _ = self.stop(crate::OTEL_TARGET_NAME);
+        }
+        // Reap collectors from earlier runs that `state.json` no longer
+        // names — without this they outlive every stop_all, one stranded
+        // OTLP port each.
+        self.sweep_stale_otel_collectors();
+        {
+            let state_dir = self.lock().state_dir.clone();
+            otel_pids::remove(&state_dir);
         }
         // Finally sweep anything still recorded in state that no target
         // covers. Deleting a target from `.run/*.yaml` while its process
@@ -1174,6 +1257,36 @@ fn project_dotenv(project_root: &Path) -> Vec<(String, String)> {
 ///
 /// `kill(-pid, 0)` checks: `ESRCH` ⇒ no member, `EPERM` ⇒ has members
 /// (we lack permission), otherwise has members.
+/// SIGTERM a process group, then SIGKILL whatever is left after a short
+/// grace period. Falls back to signalling the leader alone when the
+/// group signal fails (the process may not be its own group leader).
+///
+/// Unlike [`Manager::stop`] this touches no state entry — it is for
+/// processes we know about only through the OTel ledger, which by
+/// definition have no `state.json` row of their own anymore.
+pub(crate) fn kill_group_then_leader(pid: i32) {
+    if pid <= 0 {
+        return;
+    }
+    let group = Pid::from_raw(-pid);
+    let leader = Pid::from_raw(pid);
+    if kill(group, Signal::SIGTERM).is_err() {
+        let _ = kill(leader, Signal::SIGTERM);
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(100));
+        if !group_alive(pid) {
+            return;
+        }
+    }
+
+    if kill(group, Signal::SIGKILL).is_err() {
+        let _ = kill(leader, Signal::SIGKILL);
+    }
+}
+
 pub(crate) fn group_alive(leader_pid: i32) -> bool {
     if leader_pid <= 0 {
         return false;
