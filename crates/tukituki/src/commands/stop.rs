@@ -31,7 +31,14 @@ pub fn run(cli: &Cli, target: Option<&str>, tags: &[String]) -> ExitCode {
     }
 
     if let Some(name) = target {
-        if let Err(code) = runtime::find_target_or_die(&targets, name, cli.json) {
+        // A target deleted from `.run/*.yaml` while running stays
+        // recorded in state.json. Accept those names so the process
+        // can still be stopped instead of being stranded — but only
+        // when state actually knows it, so typos still get the usual
+        // "not found + available targets" error.
+        if !mgr.has_recorded_process(name)
+            && let Err(code) = runtime::find_target_or_die(&targets, name, cli.json)
+        {
             return code;
         }
         if let Err(e) = mgr.stop(name) {

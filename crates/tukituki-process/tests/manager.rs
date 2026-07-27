@@ -449,6 +449,59 @@ fn restart_rereads_dotenv() {
     );
 }
 
+// ---- stranded state entries -----------------------------------------
+
+#[test]
+fn stop_all_sweeps_processes_whose_target_was_deleted() {
+    // Models the real failure: a target is started, then removed from
+    // `.run/*.yaml` (a refactor that folded two workers into one). Its
+    // process keeps running and stays recorded in state.json, but every
+    // stop path keys off the target list — so before this sweep it
+    // survived every subsequent `stop`/`restart`, indefinitely.
+    let (_dir, m) = new_test_manager(vec![sleep_target("keeper"), sleep_target("removed")]);
+
+    m.start_all().expect("start_all");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(m.get_status("removed"), Status::Running);
+
+    // The target disappears from the YAML; the process does not.
+    m.update_targets(vec![sleep_target("keeper")]);
+    assert_eq!(
+        m.orphaned_process_names(),
+        vec!["removed".to_string()],
+        "a recorded process with no target must be reported as orphaned"
+    );
+
+    m.stop_all().expect("stop_all");
+    thread::sleep(Duration::from_millis(300));
+
+    let s = m.get_status("removed");
+    assert_ne!(
+        s,
+        Status::Running,
+        "stop_all must sweep a process whose target was deleted, got {s:?}"
+    );
+}
+
+#[test]
+fn orphan_sweep_ignores_targets_that_still_exist() {
+    // The sweep must not double-stop live targets or claim the virtual
+    // collector — otherwise stop_all would report bogus orphans.
+    let (_dir, m) = new_test_manager(vec![sleep_target("alpha")]);
+    m.start("alpha").expect("start");
+    thread::sleep(Duration::from_millis(200));
+
+    assert!(
+        m.orphaned_process_names().is_empty(),
+        "a target that still exists is not an orphan: {:?}",
+        m.orphaned_process_names()
+    );
+    assert!(m.has_recorded_process("alpha"));
+    assert!(!m.has_recorded_process("never-started"));
+
+    m.stop_all().expect("stop_all");
+}
+
 mod tukituki_process_test_helpers {
     /// Local helper: allocate a free TCP port without depending on the
     /// crate's private otel_port module.

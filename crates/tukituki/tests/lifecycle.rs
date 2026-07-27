@@ -474,6 +474,48 @@ fn start_applies_project_dotenv_with_shell_precedence() {
     );
 }
 
+#[test]
+fn stop_accepts_a_name_whose_run_file_was_deleted() {
+    // Deleting a target's YAML while it runs used to strand the
+    // process: `stop <name>` failed target resolution and `stop`
+    // (all) iterated only the YAML targets, so nothing could signal it.
+    let dir = fixture(&[("sleeper.yaml", SLEEPER), ("quick.yaml", QUICK)]);
+
+    tt_in(dir.path())
+        .args(["start", "sleeper"])
+        .assert()
+        .success();
+    thread::sleep(Duration::from_millis(300));
+    let pid = pid_of(dir.path(), "sleeper");
+    assert!(pid > 0, "sleeper should be running");
+
+    // The run file disappears; the process keeps going.
+    fs::remove_file(dir.path().join(".run/sleeper.yaml")).unwrap();
+
+    tt_in(dir.path())
+        .args(["stop", "sleeper"])
+        .assert()
+        .success();
+    thread::sleep(Duration::from_millis(300));
+
+    assert!(
+        !Path::new(&format!("/proc/{pid}")).exists(),
+        "stop must reach a process whose run file was deleted (pid {pid} still alive)"
+    );
+}
+
+#[test]
+fn stop_still_rejects_an_unknown_name() {
+    // The state.json fallback must not swallow typos — an unrecorded,
+    // undefined name still has to fail loudly with the available list.
+    let dir = fixture(&[("sleeper.yaml", SLEEPER)]);
+
+    tt_in(dir.path())
+        .args(["stop", "nonexistent"])
+        .assert()
+        .failure();
+}
+
 fn pid_of(dir: &Path, name: &str) -> i64 {
     let out = tt_in(dir)
         .args(["status", name, "--json"])

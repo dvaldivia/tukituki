@@ -616,8 +616,8 @@ impl Manager {
     /// prevent stopping the rest.
     pub fn stop_all(&self) -> io::Result<()> {
         let names: Vec<String> = self.lock().targets.iter().map(|t| t.name.clone()).collect();
-        for name in names {
-            let _ = self.stop(&name);
+        for name in &names {
+            let _ = self.stop(name);
         }
         // Also stop a virtual OTel collector if recorded in state.
         let has_otel = self
@@ -629,7 +629,39 @@ impl Manager {
             otel_port::remove(&self.lock().state_dir);
             let _ = self.stop(crate::OTEL_TARGET_NAME);
         }
+        // Finally sweep anything still recorded in state that no target
+        // covers. Deleting a target from `.run/*.yaml` while its process
+        // is running would otherwise strand that process forever: every
+        // stop path keys off the target list, so nothing could signal it
+        // again and it survived every subsequent stop/restart.
+        for name in self.orphaned_process_names() {
+            let _ = self.stop(&name);
+        }
         Ok(())
+    }
+
+    /// Names recorded in `state.json` that no current target claims,
+    /// excluding the virtual OTel collector (which `stop_all` handles
+    /// separately, along with its port file).
+    pub fn orphaned_process_names(&self) -> Vec<String> {
+        let inner = self.lock();
+        inner
+            .state
+            .processes
+            .keys()
+            .filter(|n| {
+                n.as_str() != crate::OTEL_TARGET_NAME
+                    && !inner.targets.iter().any(|t| &t.name == *n)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Whether `name` has an entry in `state.json`. Lets callers accept
+    /// a name the YAML no longer defines so a stranded process can still
+    /// be stopped by name.
+    pub fn has_recorded_process(&self, name: &str) -> bool {
+        self.lock().state.processes.contains_key(name)
     }
 
     /// Restart = stop + start. A "wasn't running" stop error is non-fatal.
