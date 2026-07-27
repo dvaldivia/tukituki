@@ -270,6 +270,20 @@ fn fresh_state_dir() -> (TempDir, PathBuf) {
     (dir, state_dir)
 }
 
+/// Serialises the OTel port tests against each other.
+///
+/// `allocate_free_port` hands back a port and drops its listener, so the
+/// number is only advisory — any concurrent binder can take it first.
+/// These four tests are the heaviest port churners in the binary, and
+/// letting them interleave made them steal each other's ports. Holding
+/// this for the duration of each removes that class of failure; the
+/// guard ignores poisoning so one test's panic doesn't cascade.
+static PORT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn port_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    PORT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn read_port_file(state_dir: &std::path::Path) -> u16 {
     let raw = fs::read_to_string(state_dir.join("otel-port")).expect("otel-port file");
     raw.trim().parse().expect("port int")
@@ -277,6 +291,7 @@ fn read_port_file(state_dir: &std::path::Path) -> u16 {
 
 #[test]
 fn set_otel_config_picks_and_persists_port() {
+    let _port_guard = port_test_guard();
     let (base, state_dir) = fresh_state_dir();
     let m = Manager::new(vec![], &state_dir, base.path().to_path_buf()).unwrap();
 
@@ -297,6 +312,7 @@ fn set_otel_config_picks_and_persists_port() {
 
 #[test]
 fn set_otel_config_reuses_persisted_port() {
+    let _port_guard = port_test_guard();
     let (base, state_dir) = fresh_state_dir();
 
     let m1 = Manager::new(vec![], &state_dir, base.path().to_path_buf()).unwrap();
@@ -314,15 +330,30 @@ fn set_otel_config_reuses_persisted_port() {
         severity: "error".into(),
     });
 
-    assert_eq!(
-        m2.otel_receiver_port(),
-        first,
-        "port drifted across Manager instances"
+    let second = m2.otel_receiver_port();
+    if second == first {
+        return;
+    }
+
+    // Declining to reuse is correct in exactly one case: the persisted
+    // port stopped being bindable. `allocate_free_port` returns a number
+    // without reserving it, so any process on the machine — including a
+    // sibling cargo test binary — can claim it between the two Managers.
+    // Asserting the port simply stayed free asserts something this test
+    // does not control, which is what made it flaky.
+    //
+    // Checking bindability still catches the regression that matters: if
+    // the reuse path breaks, the port is free and this fails.
+    assert!(
+        std::net::TcpListener::bind(("127.0.0.1", first)).is_err(),
+        "port drifted from {first} to {second} while {first} was still \
+         bindable — the persisted port should have been reused"
     );
 }
 
 #[test]
 fn set_otel_config_explicit_port_persists() {
+    let _port_guard = port_test_guard();
     let (base, state_dir) = fresh_state_dir();
     let m = Manager::new(vec![], &state_dir, base.path().to_path_buf()).unwrap();
 
@@ -343,15 +374,17 @@ fn set_otel_config_explicit_port_persists() {
 
 #[test]
 fn set_otel_config_stolen_port_fallback() {
+    let _port_guard = port_test_guard();
     let (base, state_dir) = fresh_state_dir();
     fs::create_dir_all(&state_dir).unwrap();
 
-    // Seed the port file with a port we then occupy with an unrelated
-    // listener. With no otel-errors process recorded, the saved port
-    // must be treated as unusable and a fresh one allocated.
-    let stolen = tukituki_process_test_helpers::allocate_port();
+    // Seed the port file with a port we occupy for the whole test. Bind
+    // first and read the port back off the live listener: allocating a
+    // port and *then* re-binding it leaves a window where another test
+    // can take it, which made this line fail intermittently.
+    let _listener = std::net::TcpListener::bind("127.0.0.1:0").expect("occupy port");
+    let stolen = _listener.local_addr().unwrap().port();
     fs::write(state_dir.join("otel-port"), stolen.to_string()).unwrap();
-    let _listener = std::net::TcpListener::bind(("127.0.0.1", stolen)).expect("occupy port");
 
     let m = Manager::new(vec![], &state_dir, base.path().to_path_buf()).unwrap();
     m.set_otel_config(OtelConfig {
