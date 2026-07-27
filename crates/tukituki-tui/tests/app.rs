@@ -28,6 +28,14 @@ struct FakeManager {
     /// real state.json. None = no pending swap.
     pending_reload_statuses: Mutex<Option<BTreeMap<String, Status>>>,
     reload_count: Mutex<usize>,
+    /// The manager's authoritative target list. `update_targets`
+    /// overwrites it wholesale and `ensure_otel_collector` appends the
+    /// virtual entry — same contract as the real Manager, which the
+    /// FileChange reload path depends on.
+    targets: Mutex<Vec<RunTarget>>,
+    /// When true, `ensure_otel_collector` re-registers the virtual
+    /// `otel-errors` target, mirroring a project with `otel: true`.
+    otel_enabled: Mutex<bool>,
 }
 
 impl ManagerHandle for FakeManager {
@@ -35,7 +43,7 @@ impl ManagerHandle for FakeManager {
         self.statuses.lock().unwrap().clone()
     }
     fn get_targets(&self) -> Vec<RunTarget> {
-        Vec::new()
+        self.targets.lock().unwrap().clone()
     }
     fn get_log_lines(&self, name: &str) -> Vec<String> {
         self.log_lines
@@ -75,11 +83,24 @@ impl ManagerHandle for FakeManager {
     fn stop_all(&self) -> std::io::Result<()> {
         Ok(())
     }
-    fn update_targets(&self, _targets: Vec<RunTarget>) {}
+    fn update_targets(&self, targets: Vec<RunTarget>) {
+        // Wholesale replacement, exactly like Manager::update_targets:
+        // any virtual target previously registered is dropped here.
+        *self.targets.lock().unwrap() = targets;
+    }
     fn describe(&self, name: &str) -> String {
         format!("description of {name}")
     }
     fn ensure_otel_collector(&self) -> std::io::Result<()> {
+        // Mirrors Manager::ensure_otel_collector's upsert_target call:
+        // the virtual entry only exists in the manager's list, never in
+        // the YAML-loaded one.
+        if *self.otel_enabled.lock().unwrap() {
+            let mut targets = self.targets.lock().unwrap();
+            if !targets.iter().any(|t| t.name == "otel-errors") {
+                targets.push(virtual_target("otel-errors"));
+            }
+        }
         Ok(())
     }
     fn log_file_path(&self, _name: &str) -> Option<PathBuf> {
@@ -157,6 +178,7 @@ pub enum AppEventForTest {
     LogLine { target: String, line: String },
     ScrollLog(i32),
     StateFileChange,
+    FileChange,
     OpDone { id: u64, summary: String },
 }
 
@@ -169,6 +191,7 @@ fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
         }
         AppEventForTest::ScrollLog(d) => tukituki_tui::test_support::scroll_log(d),
         AppEventForTest::StateFileChange => tukituki_tui::test_support::state_file_change(),
+        AppEventForTest::FileChange => tukituki_tui::test_support::file_change(),
         AppEventForTest::OpDone { id, summary } => tukituki_tui::test_support::op_done(id, summary),
     };
     app.handle(real).continue_loop
@@ -400,6 +423,85 @@ fn state_file_change_reloads_and_refreshes_statuses() {
         app.statuses.get("alpha").copied(),
         Some(Status::Failed),
         "App should adopt the post-reload manager statuses"
+    );
+}
+
+#[test]
+fn file_change_reload_keeps_virtual_otel_target() {
+    // Regression: a `.run/*.yaml` (or `.env`) write fires FileChange,
+    // whose handler calls `update_targets` with the YAML-loaded list —
+    // which has no virtual `otel-errors` entry. Rendering that list
+    // directly dropped the `─ collectors ─` cluster from the sidebar
+    // for the rest of the session, hiding reported OTel errors until
+    // the user detached and re-attached.
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join(".run");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    std::fs::write(
+        run_dir.join("alpha.yaml"),
+        "name: alpha\ncommand: true\notel: true\n",
+    )
+    .unwrap();
+
+    let mgr = std::sync::Arc::new(FakeManager::default());
+    *mgr.otel_enabled.lock().unwrap() = true;
+    // Startup state: the manager already registered the collector, so
+    // the App is handed the list including the virtual target.
+    mgr.update_targets(vec![target("alpha")]);
+    mgr.ensure_otel_collector().unwrap();
+
+    let mut app = App::new(
+        mgr.get_targets(),
+        mgr.clone(),
+        run_dir.clone(),
+        dir.path().to_path_buf(),
+    );
+    assert!(
+        app.targets.iter().any(|t| t.name == "otel-errors"),
+        "precondition: collector row present before the reload"
+    );
+    let rows_before = app.rows.len();
+
+    dispatch(&mut app, AppEventForTest::FileChange);
+
+    assert!(
+        app.targets.iter().any(|t| t.name == "otel-errors"),
+        "collector must survive a run-file reload, got {:?}",
+        app.targets.iter().map(|t| &t.name).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        app.rows.len(),
+        rows_before,
+        "separator + collector rows must still be in the sidebar"
+    );
+}
+
+#[test]
+fn file_change_reload_picks_up_new_yaml_targets() {
+    // The reload must still surface targets added to `.run` while the
+    // TUI is attached — reading the list back from the manager must not
+    // pin the sidebar to the startup set.
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join(".run");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    std::fs::write(run_dir.join("alpha.yaml"), "name: alpha\ncommand: true\n").unwrap();
+
+    let mgr = std::sync::Arc::new(FakeManager::default());
+    mgr.update_targets(vec![target("alpha")]);
+    let mut app = App::new(
+        mgr.get_targets(),
+        mgr.clone(),
+        run_dir.clone(),
+        dir.path().to_path_buf(),
+    );
+
+    std::fs::write(run_dir.join("beta.yaml"), "name: beta\ncommand: true\n").unwrap();
+    dispatch(&mut app, AppEventForTest::FileChange);
+
+    let names: Vec<&str> = app.targets.iter().map(|t| t.name.as_str()).collect();
+    assert!(
+        names.contains(&"alpha") && names.contains(&"beta"),
+        "reload should surface newly-added targets, got {names:?}"
     );
 }
 

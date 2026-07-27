@@ -19,3 +19,6 @@ shell-words = { workspace = true }
 tukituki-config = { workspace = true }
 tukituki-state = { workspace = true }
 tukituki-process = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

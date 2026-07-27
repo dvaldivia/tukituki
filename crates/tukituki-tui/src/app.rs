@@ -552,16 +552,26 @@ impl<H: ManagerHandle> App<H> {
                 if let Ok(mut targets) = load_targets(&self.run_dir) {
                     let dotenv = load_dotenv(&self.project_root).ok().flatten();
                     targets = expand_env(targets, dotenv.as_ref());
-                    self.manager.update_targets(targets.clone());
-                    self.targets = targets;
-                    self.rebuild_rows();
+                    // Replaces the manager's list with the YAML-only
+                    // set — the virtual `otel-errors` entry is gone
+                    // until `ensure_otel_collector` puts it back.
+                    self.manager.update_targets(targets);
                     // Bring up the OTel collector if a newly-added
-                    // target enabled it. Non-fatal on failure.
+                    // target enabled it, and re-register the virtual
+                    // target dropped just above. Non-fatal on failure.
                     if let Err(e) = self.manager.ensure_otel_collector() {
                         self.flash(&format!("otel collector: {e}"));
                     } else {
                         self.flash("reloaded run files");
                     }
+                    // Read the list back from the manager rather than
+                    // reusing the YAML-loaded one: only the manager's
+                    // copy carries virtual targets, and rendering the
+                    // YAML set directly would drop the `─ collectors ─`
+                    // cluster from the sidebar for the rest of the
+                    // session.
+                    self.targets = self.manager.get_targets();
+                    self.rebuild_rows();
                     self.dirty = true;
                     self.urgent = true;
                 }

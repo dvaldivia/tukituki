@@ -40,6 +40,9 @@ pub mod test_support {
     pub fn state_file_change() -> AppEvent {
         AppEvent::StateFileChange
     }
+    pub fn file_change() -> AppEvent {
+        AppEvent::FileChange
+    }
     pub fn op_done(id: u64, summary: String) -> AppEvent {
         AppEvent::OpDone { id, summary }
     }
