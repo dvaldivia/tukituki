@@ -461,9 +461,15 @@ fn start_applies_project_dotenv_with_shell_precedence() {
         .args(["start", "envy"])
         .assert()
         .success();
-    thread::sleep(Duration::from_millis(500));
 
-    let log = fs::read_to_string(dir.path().join(".tukituki/logs/envy.log")).unwrap();
+    // Poll rather than sleeping a fixed 500ms: on a loaded CI runner the
+    // child had not flushed yet and the log read back empty, failing
+    // this test on ubuntu. Mirrors `wait_for_log_content` in logs.rs,
+    // which replaced the same fixed-sleep pattern in 68998e0.
+    let log = wait_for_log(
+        &dir.path().join(".tukituki/logs/envy.log"),
+        "TT_LIFECYCLE_FROM_DOTENV=",
+    );
     assert!(
         log.contains("TT_LIFECYCLE_FROM_DOTENV=dotenv_value"),
         "unmapped .env var must reach the child: {log:?}"
@@ -496,12 +502,50 @@ fn stop_accepts_a_name_whose_run_file_was_deleted() {
         .args(["stop", "sleeper"])
         .assert()
         .success();
-    thread::sleep(Duration::from_millis(300));
 
+    // Poll: the pid can linger briefly as a zombie after `stop` returns.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while pid_alive(pid) && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(25));
+    }
     assert!(
-        !Path::new(&format!("/proc/{pid}")).exists(),
+        !pid_alive(pid),
         "stop must reach a process whose run file was deleted (pid {pid} still alive)"
     );
+}
+
+/// Poll `path` until it contains `needle`, returning the full contents.
+/// A fixed sleep races the child's first flush on slow runners.
+fn wait_for_log(path: &Path, needle: &str) -> String {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let content = fs::read_to_string(path).unwrap_or_default();
+        if content.contains(needle) {
+            return content;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!(
+                "timed out waiting for {needle:?} in {}: {content:?}",
+                path.display()
+            );
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// Portable liveness probe. `/proc/<pid>` only exists on Linux, so a
+/// `!Path::new("/proc/…").exists()` assertion passes vacuously on macOS —
+/// the test looks green while checking nothing.
+fn pid_alive(pid: i64) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None) {
+        Ok(_) => true,
+        Err(nix::errno::Errno::ESRCH) => false,
+        Err(nix::errno::Errno::EPERM) => true,
+        Err(_) => false,
+    }
 }
 
 #[test]

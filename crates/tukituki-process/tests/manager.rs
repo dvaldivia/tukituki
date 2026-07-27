@@ -5,7 +5,7 @@
 //! state directories and each one writes to its own tempdir.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -572,10 +572,17 @@ fn sweep_reaps_a_superseded_collector() {
     // Model a collector this project spawned that state no longer names.
     write_ledger(&dir, &[pid]);
     m.sweep_stale_otel_collectors();
-    thread::sleep(Duration::from_millis(300));
 
+    // Poll rather than sleeping a fixed interval: after the group is
+    // signalled the leader lingers as a zombie until the reaper thread
+    // waits on it, and `kill(-pid, 0)` still succeeds on a zombie. How
+    // long that takes varies by platform and load.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while group_alive(pid) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(25));
+    }
     assert!(
-        !Path::new(&format!("/proc/{pid}")).exists(),
+        !group_alive(pid),
         "superseded collector (pid {pid}) must be reaped"
     );
     assert!(
@@ -602,7 +609,7 @@ fn sweep_spares_the_currently_tracked_collector() {
     thread::sleep(Duration::from_millis(250));
 
     assert!(
-        Path::new(&format!("/proc/{pid}")).exists(),
+        group_alive(pid),
         "the tracked collector (pid {pid}) must survive the sweep"
     );
     assert_eq!(
