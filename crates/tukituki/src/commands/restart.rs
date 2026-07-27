@@ -22,11 +22,7 @@ pub fn run(cli: &Cli, args: &[String], tags: &[String]) -> ExitCode {
     }
 
     if !tags.is_empty() && !args.is_empty() {
-        runtime::exit_error(
-            cli.json,
-            "cannot specify both target names and --tags",
-            &[],
-        );
+        runtime::exit_error(cli.json, "cannot specify both target names and --tags", &[]);
         return ExitCode::from(2);
     }
 

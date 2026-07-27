@@ -297,7 +297,10 @@ fn list_json_includes_tags_when_present() {
         .assert()
         .success();
     let stdout = String::from_utf8(out.get_output().stdout.clone()).unwrap();
-    assert!(stdout.contains("\"tags\""), "tags key should be present: {stdout}");
+    assert!(
+        stdout.contains("\"tags\""),
+        "tags key should be present: {stdout}"
+    );
     assert!(stdout.contains("backend"), "tag value: {stdout}");
 }
 
@@ -330,7 +333,9 @@ fn list_text_shows_tags_column_and_values() {
     // p has no tags → its row must exist and must not mention the tags from the other targets
     let p_line = stdout
         .lines()
-        .find(|l| l.contains(" p ") || l.starts_with("p ") || (l.contains('p') && l.contains("echo")))
+        .find(|l| {
+            l.contains(" p ") || l.starts_with("p ") || (l.contains('p') && l.contains("echo"))
+        })
         .expect("p row");
     assert!(
         !p_line.contains("backend") && !p_line.contains("frontend") && !p_line.contains("ui"),
@@ -342,7 +347,10 @@ fn list_text_shows_tags_column_and_values() {
 fn list_respects_tags_filter() {
     let dir = fixture_run_dir(&[
         ("api.yaml", "name: api\ncommand: go\ntags: [backend, api]\n"),
-        ("worker.yaml", "name: worker\ncommand: echo\ntags: [backend, worker]\n"),
+        (
+            "worker.yaml",
+            "name: worker\ncommand: echo\ntags: [backend, worker]\n",
+        ),
         ("ui.yaml", "name: ui\ncommand: npm\ntags: [frontend]\n"),
     ]);
     let out = tukituki_in(dir.path())
@@ -351,7 +359,12 @@ fn list_respects_tags_filter() {
         .success();
     let stdout = String::from_utf8(out.get_output().stdout.clone()).unwrap();
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let names: Vec<_> = v.as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
+    let names: Vec<_> = v
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
     assert_eq!(names, vec!["api", "worker"]);
 
     // OR semantics with multiple tags
@@ -359,8 +372,15 @@ fn list_respects_tags_filter() {
         .args(["list", "--tags=frontend,worker", "--json"])
         .assert()
         .success();
-    let v2: serde_json::Value = serde_json::from_str(&String::from_utf8(out2.get_output().stdout.clone()).unwrap()).unwrap();
-    let names2: Vec<_> = v2.as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
+    let v2: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(out2.get_output().stdout.clone()).unwrap())
+            .unwrap();
+    let names2: Vec<_> = v2
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
     assert_eq!(names2, vec!["ui", "worker"]);
 }
 

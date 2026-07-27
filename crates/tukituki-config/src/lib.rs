@@ -438,8 +438,15 @@ command: ./worker
     #[test]
     fn filter_targets_by_tags_empty_request_returns_all() {
         let ts = vec![
-            RunTarget { name: "a".into(), tags: vec!["x".into()], ..Default::default() },
-            RunTarget { name: "b".into(), ..Default::default() },
+            RunTarget {
+                name: "a".into(),
+                tags: vec!["x".into()],
+                ..Default::default()
+            },
+            RunTarget {
+                name: "b".into(),
+                ..Default::default()
+            },
         ];
         let out = filter_targets_by_tags(&ts, &[]);
         assert_eq!(out.len(), 2);
@@ -448,9 +455,21 @@ command: ./worker
     #[test]
     fn filter_targets_by_tags_matches_any() {
         let ts = vec![
-            RunTarget { name: "a".into(), tags: vec!["backend".into()], ..Default::default() },
-            RunTarget { name: "b".into(), tags: vec!["frontend".into(), "ui".into()], ..Default::default() },
-            RunTarget { name: "c".into(), tags: vec!["worker".into()], ..Default::default() },
+            RunTarget {
+                name: "a".into(),
+                tags: vec!["backend".into()],
+                ..Default::default()
+            },
+            RunTarget {
+                name: "b".into(),
+                tags: vec!["frontend".into(), "ui".into()],
+                ..Default::default()
+            },
+            RunTarget {
+                name: "c".into(),
+                tags: vec!["worker".into()],
+                ..Default::default()
+            },
         ];
         let out = filter_targets_by_tags(&ts, &["backend".into(), "worker".into()]);
         let names: Vec<_> = out.iter().map(|t| t.name.as_str()).collect();
@@ -459,7 +478,11 @@ command: ./worker
 
     #[test]
     fn filter_targets_by_tags_no_match_yields_empty() {
-        let ts = vec![RunTarget { name: "a".into(), tags: vec!["x".into()], ..Default::default() }];
+        let ts = vec![RunTarget {
+            name: "a".into(),
+            tags: vec!["x".into()],
+            ..Default::default()
+        }];
         let out = filter_targets_by_tags(&ts, &["nope".into()]);
         assert!(out.is_empty());
     }

@@ -306,7 +306,10 @@ mod tests {
 
     #[test]
     fn default_embedded_in_larger_string() {
-        let targets = vec![target_with_env(&[("URL", "https://${HOST:-localhost}:7614")])];
+        let targets = vec![target_with_env(&[(
+            "URL",
+            "https://${HOST:-localhost}:7614",
+        )])];
         let result = expand_env(targets, Some(&map(&[("UNRELATED", "x")])));
         assert_eq!(result[0].env["URL"], "https://localhost:7614");
     }

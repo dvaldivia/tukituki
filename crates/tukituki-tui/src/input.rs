@@ -282,8 +282,7 @@ fn action_restart_all<H: ManagerHandle>(app: &mut App<H>) {
         .targets
         .iter()
         .filter(|t| {
-            t.autorun
-                || app.statuses.get(&t.name).copied() == Some(tukituki_state::Status::Running)
+            t.autorun || app.statuses.get(&t.name).copied() == Some(tukituki_state::Status::Running)
         })
         .map(|t| t.name.clone())
         .collect();

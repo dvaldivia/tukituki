@@ -332,7 +332,10 @@ fn restart_with_tags_targets_only_matching() {
     let pid_f2 = pid_of(dir.path(), "front");
 
     assert_ne!(pid_b, pid_b2, "backend should have restarted");
-    assert_ne!(pid_w, pid_w2, "worker should have restarted (shares backend tag)");
+    assert_ne!(
+        pid_w, pid_w2,
+        "worker should have restarted (shares backend tag)"
+    );
     assert_eq!(pid_f, pid_f2, "front must be untouched");
 
     // Cleanup
@@ -342,10 +345,7 @@ fn restart_with_tags_targets_only_matching() {
 
 #[test]
 fn start_with_tags_starts_only_matching_and_respects_explicit() {
-    let dir = fixture(&[
-        ("backend.yaml", BACKEND),
-        ("front.yaml", FRONT),
-    ]);
+    let dir = fixture(&[("backend.yaml", BACKEND), ("front.yaml", FRONT)]);
 
     // Start only backend-tagged; front should remain untouched (and autorun isn't relevant here since explicit tag selection).
     tt_in(dir.path())
@@ -359,7 +359,8 @@ fn start_with_tags_starts_only_matching_and_respects_explicit() {
         .args(["status", "backend", "--json"])
         .assert()
         .success();
-    let v: serde_json::Value = serde_json::from_str(&String::from_utf8(st.get_output().stdout.clone()).unwrap()).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(st.get_output().stdout.clone()).unwrap()).unwrap();
     assert_eq!(v["status"], "running");
 
     // front should not be running (no state or not running)
@@ -367,9 +368,13 @@ fn start_with_tags_starts_only_matching_and_respects_explicit() {
         .args(["status", "front", "--json"])
         .assert()
         .success();
-    let vf: serde_json::Value = serde_json::from_str(&String::from_utf8(stf.get_output().stdout.clone()).unwrap()).unwrap();
+    let vf: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(stf.get_output().stdout.clone()).unwrap()).unwrap();
     // status may be "unknown" or "stopped"; either way not running
-    assert_ne!(vf["status"], "running", "front must not have been started by --tags=backend");
+    assert_ne!(
+        vf["status"], "running",
+        "front must not have been started by --tags=backend"
+    );
 
     let _ = tt_in(dir.path()).args(["stop", "--tags=backend"]).assert();
 }
@@ -397,14 +402,16 @@ fn stop_with_tags_stops_only_matching() {
         .args(["status", "front", "--json"])
         .assert()
         .success();
-    let vf: serde_json::Value = serde_json::from_str(&String::from_utf8(stf.get_output().stdout.clone()).unwrap()).unwrap();
+    let vf: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(stf.get_output().stdout.clone()).unwrap()).unwrap();
     assert_ne!(vf["status"], "running");
 
     let stb = tt_in(dir.path())
         .args(["status", "backend", "--json"])
         .assert()
         .success();
-    let vb: serde_json::Value = serde_json::from_str(&String::from_utf8(stb.get_output().stdout.clone()).unwrap()).unwrap();
+    let vb: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(stb.get_output().stdout.clone()).unwrap()).unwrap();
     assert_eq!(vb["status"], "running");
 
     // Cleanup remaining

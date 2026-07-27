@@ -208,10 +208,22 @@ pub fn run() -> ExitCode {
     match cli.command {
         Some(Command::Version) => commands::version::run(cli.json),
         Some(Command::List { ref tags }) => commands::list::run(&cli, tags),
-        Some(Command::Status { ref target, ref tags }) => commands::status::run(&cli, target.as_deref(), tags),
-        Some(Command::Start { ref target, ref tags }) => commands::start::run(&cli, target.as_deref(), tags),
-        Some(Command::Stop { ref target, ref tags }) => commands::stop::run(&cli, target.as_deref(), tags),
-        Some(Command::Restart { ref targets, ref tags }) => commands::restart::run(&cli, targets, tags),
+        Some(Command::Status {
+            ref target,
+            ref tags,
+        }) => commands::status::run(&cli, target.as_deref(), tags),
+        Some(Command::Start {
+            ref target,
+            ref tags,
+        }) => commands::start::run(&cli, target.as_deref(), tags),
+        Some(Command::Stop {
+            ref target,
+            ref tags,
+        }) => commands::stop::run(&cli, target.as_deref(), tags),
+        Some(Command::Restart {
+            ref targets,
+            ref tags,
+        }) => commands::restart::run(&cli, targets, tags),
         Some(Command::Logs {
             ref target,
             follow,
