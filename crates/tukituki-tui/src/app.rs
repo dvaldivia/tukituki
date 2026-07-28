@@ -6,7 +6,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::SyncSender;
 
 use ansi_to_tui::IntoText;
@@ -15,6 +14,7 @@ use tukituki_config::{RunTarget, expand_env, load_dotenv, load_targets};
 use tukituki_state::Status;
 
 use crate::event::AppEvent;
+use crate::gate::ReaderGate;
 use crate::handle::ManagerHandle;
 use crate::input;
 use crate::rows::{Row, compute};
@@ -81,13 +81,15 @@ pub struct App<H: ManagerHandle> {
     pub search_matches: Vec<usize>,
     pub search_match_idx: usize,
 
-    /// Set to true while $EDITOR is running so the input reader thread
-    /// stops calling `crossterm::event::read()` and leaves stdin to the
-    /// editor. Without this the parent's reader and the editor child
-    /// race for each keystroke on the same PTY fd — the user sees the
-    /// editor as sluggish because roughly half the keys are consumed
-    /// by crossterm and dropped on the floor here.
-    input_paused: Arc<AtomicBool>,
+    /// Held while $EDITOR is running so the input reader thread stops
+    /// calling `crossterm::event::read()` and leaves stdin to the
+    /// editor. Without it the parent's reader and the editor child race
+    /// for each keystroke on the same PTY fd — the user sees the editor
+    /// as sluggish because crossterm swallows keys, and sees them
+    /// replayed as TUI commands once the editor exits. See
+    /// [`crate::gate::ReaderGate`] for why the handoff is acknowledged
+    /// rather than just flagged.
+    input_gate: Arc<ReaderGate>,
 
     /// Set by handlers that left the terminal in a state ratatui's
     /// diff renderer can't reconcile — e.g. after an external editor
@@ -252,7 +254,7 @@ impl<H: ManagerHandle> App<H> {
             search_query: String::new(),
             search_matches: Vec::new(),
             search_match_idx: 0,
-            input_paused: Arc::new(AtomicBool::new(false)),
+            input_gate: Arc::new(ReaderGate::new()),
             force_full_redraw: false,
             in_flight: BTreeMap::new(),
             next_op_id: 0,
@@ -317,19 +319,11 @@ impl<H: ManagerHandle> App<H> {
         was
     }
 
-    /// A clone of the shared "pause the input reader" flag. The TUI's
-    /// input thread reads this each iteration; `action_edit` flips it
-    /// to true around the `$EDITOR` invocation.
-    pub fn input_paused_handle(&self) -> Arc<AtomicBool> {
-        self.input_paused.clone()
-    }
-
-    /// Pause/resume the crossterm input reader thread. Pause before
-    /// shelling out to any process that needs stdin (`$EDITOR`);
-    /// resume immediately after it exits.
-    pub fn set_input_paused(&self, paused: bool) {
-        self.input_paused
-            .store(paused, std::sync::atomic::Ordering::Release);
+    /// A clone of the shared reader gate. The TUI's input thread checks
+    /// it each iteration; `action_edit` closes it around the `$EDITOR`
+    /// invocation so the child owns stdin outright.
+    pub fn input_gate(&self) -> Arc<ReaderGate> {
+        self.input_gate.clone()
     }
 
     /// Tear down search state. Called by Esc inside search mode and

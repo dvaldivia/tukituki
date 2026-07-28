@@ -8,6 +8,7 @@
 
 mod app;
 mod event;
+mod gate;
 mod handle;
 mod input;
 mod rows;
@@ -112,9 +113,9 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     let manager: std::sync::Arc<H> = std::sync::Arc::new(manager);
 
     // Build the App first so the input reader thread can share its
-    // `input_paused` flag — `action_edit` flips that flag while
-    // `$EDITOR` runs so the editor child isn't fighting the reader
-    // for stdin on the same PTY fd.
+    // reader gate — `action_edit` closes that gate while `$EDITOR`
+    // runs so the editor child isn't fighting the reader for stdin
+    // on the same PTY fd.
     let project_root_for_watch = project_root.clone();
     let mut app = App::new(targets, manager, run_dir.clone(), project_root);
     // Hand the App a sender so action handlers can offload blocking
@@ -122,16 +123,16 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // OpDone events back here. Without this the UI freezes for the
     // full SIGTERM-wait-SIGKILL window of every target.
     app.attach_event_sender(tx.clone());
-    let input_paused = app.input_paused_handle();
+    let input_gate = app.input_gate();
 
     // Spawn the input reader thread. Polls crossterm and forwards
     // keys/resizes/mouse to the app loop — but yields stdin entirely
-    // while `input_paused` is set so external processes (the editor)
-    // can read it without contention.
+    // while the gate is closed so external processes (the editor) can
+    // read it without contention.
     let input_tx = tx.clone();
     let _input_handle = thread::Builder::new()
         .name("tukituki-tui-input".into())
-        .spawn(move || input_loop(input_tx, input_paused))?;
+        .spawn(move || input_loop(input_tx, input_gate))?;
 
     // Status tick every second so PID liveness + reaper-driven status
     // changes propagate to the sidebar without a key press.
@@ -308,36 +309,36 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     Ok(outcome)
 }
 
-fn input_loop(
-    tx: mpsc::SyncSender<AppEvent>,
-    paused: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) {
-    use std::sync::atomic::Ordering;
-
-    // Poll cadence while idle. Bounds how quickly the reader notices
-    // the editor finishing — keystrokes themselves still arrive with
-    // no extra latency because `poll` returns immediately when an
+fn input_loop(tx: mpsc::SyncSender<AppEvent>, gate: std::sync::Arc<crate::gate::ReaderGate>) {
+    // Poll cadence while idle. Bounds how long a pause request waits
+    // for our acknowledgement — keystrokes themselves still arrive
+    // with no extra latency because `poll` returns immediately when an
     // event is ready, well before this timeout.
     const POLL_TIMEOUT: Duration = Duration::from_millis(100);
-    // Sleep cadence while paused. Same trade-off in reverse: bounds
-    // first-keystroke latency after the editor exits.
-    const PAUSED_SLEEP: Duration = Duration::from_millis(50);
 
     loop {
-        if paused.load(Ordering::Acquire) {
+        if gate.is_paused() {
             // Editor (or other foreground tool) owns the PTY. Don't
             // touch stdin — even `event::read()` of one byte that the
             // editor needed would corrupt its input stream.
-            thread::sleep(PAUSED_SLEEP);
+            gate.park_and_sleep();
+            continue;
+        }
+        // Claim stdin. A pause requested since the check above wins:
+        // entering `poll` now would make the requester wait out the
+        // full POLL_TIMEOUT before it could hand over the terminal.
+        if !gate.try_unpark() {
             continue;
         }
         match crossterm::event::poll(POLL_TIMEOUT) {
             Ok(false) => continue,
             Ok(true) => {
-                // Re-check after poll: if the main thread flipped
-                // `paused` between our last check and now, leave the
-                // pending byte in stdin so the editor reads it.
-                if paused.load(Ordering::Acquire) {
+                // Re-check after poll: `poll` has already pulled this
+                // event's bytes off the tty into crossterm's buffer, so
+                // if a pause landed meanwhile we can't put them back.
+                // Leave the event queued and park — the pauser drains
+                // crossterm's buffer before handing over the terminal.
+                if gate.is_paused() {
                     continue;
                 }
                 match crossterm::event::read() {

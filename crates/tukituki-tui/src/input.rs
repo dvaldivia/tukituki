@@ -367,6 +367,44 @@ fn action_describe<H: ManagerHandle>(app: &mut App<H>) {
     }
 }
 
+/// How long `action_edit` waits for the input reader to confirm it has
+/// released stdin. The reader answers within one poll timeout (100ms)
+/// in the normal case; this is the ceiling for a reader that's wedged
+/// or already gone, after which we open the editor regardless.
+const READER_PARK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Timeout for each step of a drain pass. Deliberately not zero:
+/// crossterm's unix source skips its own leftover-event buffer when the
+/// timeout is zero (it bails before the `parser.next()` check), so a
+/// zero-timeout drain would miss every event past the first when a
+/// single tty read parsed several — which is the common case for a
+/// burst of typing. A couple of milliseconds is enough for buffered
+/// events to come back instantly while barely widening the window in
+/// which a genuine keystroke could be swallowed.
+const DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(2);
+
+/// Ceiling on a single drain pass. A terminal that streams input
+/// endlessly (a mouse dragged across a capture-enabled pane, say)
+/// must not be able to wedge us here.
+const MAX_DRAIN_EVENTS: usize = 4096;
+
+/// Swallow every event crossterm has buffered plus anything already
+/// readable on the tty. Only safe to call when the reader thread is
+/// parked, otherwise the two race for the same queue.
+fn drain_pending_input() {
+    for _ in 0..MAX_DRAIN_EVENTS {
+        match crossterm::event::poll(DRAIN_POLL) {
+            Ok(true) => {
+                if crossterm::event::read().is_err() {
+                    return;
+                }
+            }
+            // Nothing left, or no tty to read from at all.
+            _ => return,
+        }
+    }
+}
+
 fn action_edit<H: ManagerHandle>(app: &mut App<H>) {
     let Some(t) = app.selected_target() else {
         return;
@@ -378,12 +416,20 @@ fn action_edit<H: ManagerHandle>(app: &mut App<H>) {
     }
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
 
-    // Tell the input reader thread to stop consuming stdin before we
-    // tear down raw mode — otherwise it and the editor child race for
-    // every keystroke on the same PTY fd and the editor feels laggy.
-    // Also drop mouse capture: `LeaveAlternateScreen` doesn't undo it
+    // Hand stdin to the editor before we tear down raw mode, and wait
+    // for the reader thread to confirm it has let go — a reader still
+    // inside `crossterm::event::poll` keeps stealing bytes off the tty
+    // no matter what the flag says, which is what made the editor feel
+    // laggy and left phantom keys queued for the TUI. Best-effort: if
+    // the reader never acknowledges we open the editor anyway.
+    let gate = app.input_gate();
+    gate.pause_and_wait(READER_PARK_TIMEOUT);
+    // Anything crossterm buffered on its way to parking is ours, not
+    // the editor's. Drop it so it neither confuses the editor nor
+    // replays as a TUI command later.
+    drain_pending_input();
+    // Drop mouse capture too: `LeaveAlternateScreen` doesn't undo it
     // and the editor would otherwise see CSI mouse sequences as input.
-    app.set_input_paused(true);
     let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
     let _ = crossterm::terminal::disable_raw_mode();
     let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
@@ -399,7 +445,12 @@ fn action_edit<H: ManagerHandle>(app: &mut App<H>) {
     let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen);
     let _ = crossterm::terminal::enable_raw_mode();
     let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture);
-    app.set_input_paused(false);
+    // Whatever the editor left on the tty — typeahead it didn't
+    // consume, the terminal's replies to its own capability queries —
+    // would otherwise arrive as our first keystrokes. Drain before
+    // reopening the gate.
+    drain_pending_input();
+    gate.resume();
     // EnterAlternateScreen lands us on a freshly-cleared alt screen,
     // but ratatui still thinks its pre-editor frame is on the wire.
     // Without this nudge the next draw would only emit diffs and the
