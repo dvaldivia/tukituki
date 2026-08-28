@@ -96,6 +96,11 @@ const APP_CHANNEL_CAPACITY: usize = 16_384;
 /// case latency between a key press and a re-render.
 const FRAME_BUDGET: Duration = Duration::from_millis(16);
 
+/// How often the `.env` poller stats the file. `.env` edits are a
+/// human-scale event; a second of latency before targets re-expand is
+/// not noticeable next to the restart they trigger.
+const DOTENV_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event as CtEvent, KeyEventKind, MouseEvent,
 };
@@ -175,12 +180,16 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
             }
         })?;
 
-    // File-watcher: any *.yaml/*.yml change under run_dir — or an edit
-    // to the project root's `.env` — triggers a reload event, so target
-    // definitions re-expand against current values. Debounced inside
-    // notify-debouncer-mini.
+    // File-watcher: any *.yaml/*.yml change under run_dir triggers a
+    // reload event, so target definitions re-expand against current
+    // values. Debounced inside notify-debouncer-mini.
     let reload_tx = tx.clone();
-    let _watcher = spawn_fs_watcher(&run_dir, &project_root_for_watch, reload_tx).ok();
+    let _watcher = spawn_fs_watcher(&run_dir, reload_tx).ok();
+
+    // The project root's `.env` feeds the same reload, but it is polled
+    // rather than watched — see `spawn_dotenv_poller` for why a watch on
+    // the project root is not safe on macOS.
+    let _ = spawn_dotenv_poller(&project_root_for_watch, tx.clone());
 
     // State-file watcher: an external `tukituki start/stop/restart`
     // updates `<state_dir>/state.json` behind our back. Without this
@@ -452,7 +461,6 @@ fn spawn_state_file_watcher(
 
 fn spawn_fs_watcher(
     run_dir: &std::path::Path,
-    project_root: &std::path::Path,
     tx: mpsc::SyncSender<AppEvent>,
 ) -> notify::Result<notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>> {
     let mut debouncer = notify_debouncer_mini::new_debouncer(
@@ -461,7 +469,7 @@ fn spawn_fs_watcher(
             if let Ok(events) = events {
                 let interesting = events.iter().any(|e| {
                     let ext = e.path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                    ext == "yaml" || ext == "yml" || e.path.file_name().is_some_and(|n| n == ".env")
+                    ext == "yaml" || ext == "yml"
                 });
                 if interesting {
                     let _ = tx.send(AppEvent::FileChange);
@@ -472,11 +480,94 @@ fn spawn_fs_watcher(
     debouncer
         .watcher()
         .watch(run_dir, notify::RecursiveMode::Recursive)?;
-    // Non-recursive so we only see the project root's own entries (the
-    // `.env` filter above ignores everything else). Best-effort: a root
-    // we can't watch shouldn't take down the run-dir watcher.
-    let _ = debouncer
-        .watcher()
-        .watch(project_root, notify::RecursiveMode::NonRecursive);
     Ok(debouncer)
+}
+
+/// Emit a reload event when the project root's `.env` changes.
+///
+/// A stat once a second, rather than a filesystem watch. The project
+/// root used to be watched non-recursively for exactly this, but on
+/// macOS we build notify with `macos_kqueue`, and that backend holds one
+/// file descriptor per watched path *and* adopts directory entries it
+/// has not seen with a hardcoded recursive flag
+/// (`notify::kqueue::EventLoop::handle_events`). The first file created
+/// in the project root therefore made it swallow a whole top-level
+/// directory — `build/`, `node_modules/`, `target/` — one descriptor per
+/// file. macOS defaults `RLIMIT_NOFILE` to a soft 256, so a mid-size
+/// repo exhausted the process's descriptors within seconds, and from
+/// then on every `Command::spawn` failed with `EMFILE`: restarting a
+/// target killed it and could not bring it back.
+///
+/// Polling costs one `stat` per second, holds no descriptor, survives
+/// the write-and-rename that editors and secret managers use, and needs
+/// no re-arming when `.env` is created or deleted mid-session. `.env`
+/// edits are rare enough that the extra second of latency is invisible;
+/// `.run/*.yaml` stays event-driven.
+fn spawn_dotenv_poller(
+    project_root: &std::path::Path,
+    tx: mpsc::SyncSender<AppEvent>,
+) -> io::Result<()> {
+    let path = project_root.join(".env");
+    let mut last = dotenv_fingerprint(&path);
+    thread::Builder::new()
+        .name("tukituki-tui-dotenv".into())
+        .spawn(move || {
+            loop {
+                thread::sleep(DOTENV_POLL_INTERVAL);
+                let current = dotenv_fingerprint(&path);
+                if current == last {
+                    continue;
+                }
+                last = current;
+                if tx.send(AppEvent::FileChange).is_err() {
+                    return;
+                }
+            }
+        })?;
+    Ok(())
+}
+
+/// `(len, mtime)` for `.env`, or `None` when it does not exist. Both
+/// halves earn their place: a rewrite that happens to keep the length
+/// still moves the mtime, and a create or delete flips the `Option`. A
+/// filesystem that cannot report mtime degrades to length-only rather
+/// than looking like a deletion.
+fn dotenv_fingerprint(path: &std::path::Path) -> Option<(u64, std::time::SystemTime)> {
+    let md = std::fs::metadata(path).ok()?;
+    Some((md.len(), md.modified().unwrap_or(std::time::UNIX_EPOCH)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dotenv_fingerprint;
+
+    #[test]
+    fn dotenv_fingerprint_tracks_create_change_and_delete() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join(".env");
+
+        assert_eq!(
+            dotenv_fingerprint(&path),
+            None,
+            "a project without a .env must fingerprint as absent"
+        );
+
+        std::fs::write(&path, "A=1\n").expect("write .env");
+        let created = dotenv_fingerprint(&path);
+        assert!(created.is_some(), "a created .env must fingerprint");
+
+        std::fs::write(&path, "A=1\nB=2\n").expect("rewrite .env");
+        assert_ne!(
+            dotenv_fingerprint(&path),
+            created,
+            "an edit must move the fingerprint"
+        );
+
+        std::fs::remove_file(&path).expect("remove .env");
+        assert_eq!(
+            dotenv_fingerprint(&path),
+            None,
+            "a deleted .env must read as absent again"
+        );
+    }
 }
