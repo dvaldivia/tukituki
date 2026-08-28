@@ -25,6 +25,11 @@ pub enum Status {
     Failed,
     #[default]
     Unknown,
+    /// Derived only, never persisted: the leader pid is alive but the
+    /// target's configured `health:` probe fails after the grace
+    /// period. `state.json` keeps `running` for such a process; the
+    /// manager reports `Unhealthy` when asked.
+    Unhealthy,
 }
 
 /// Runtime information for a single managed process.  Field names and

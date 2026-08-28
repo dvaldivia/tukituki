@@ -10,6 +10,7 @@
 //! `Describe`) are explicitly deferred — see `plans/rust-port.md` Phase 4
 //! and Phase 5 respectively.
 
+pub mod health;
 mod manager;
 mod otel_pids;
 mod otel_port;

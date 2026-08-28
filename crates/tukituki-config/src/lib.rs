@@ -51,6 +51,26 @@ pub struct RunTarget {
     /// --tags=...) to operate on a subset without naming every target.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Optional liveness probe. Without it a target counts as "running"
+    /// for as long as its *leader* pid exists — which is a lie for
+    /// launcher-style commands (`go run`, `npm run`, `cargo run`): the
+    /// launcher can outlive the real server (cmd/go ignores SIGTERM
+    /// while its child runs), and a server can wedge mid-shutdown with
+    /// its listeners already closed. Either way `status` said "running"
+    /// on a pid that answered nothing. With a probe, `status` reports
+    /// `unhealthy` instead and `start` restarts the target rather than
+    /// skipping it as already running.
+    ///
+    /// Forms: `tcp://HOST:PORT` (HOST optional, default 127.0.0.1) or
+    /// `http://HOST:PORT/PATH` — any HTTP response counts, including
+    /// 4xx/5xx: the question is "is anything answering", not "is it
+    /// happy". Plain http only, 1s timeout.
+    #[serde(default)]
+    pub health: String,
+    /// Seconds after start during which a failing probe is ignored, so
+    /// a cold `go run` build isn't flagged while it compiles. Default 60.
+    #[serde(default = "default_health_grace_secs")]
+    pub health_grace_secs: u64,
 
     // Runtime-only fields, never read from YAML.
     #[serde(skip)]
@@ -67,6 +87,10 @@ fn default_autorun() -> bool {
     true
 }
 
+fn default_health_grace_secs() -> u64 {
+    60
+}
+
 impl Default for RunTarget {
     fn default() -> Self {
         Self {
@@ -80,6 +104,8 @@ impl Default for RunTarget {
             otel: false,
             autorun: true,
             tags: Vec::new(),
+            health: String::new(),
+            health_grace_secs: 60,
             group: String::new(),
             parse_error: String::new(),
             is_virtual: false,
@@ -265,6 +291,29 @@ command: ./worker
         assert_eq!(targets[1].name, "worker");
         assert_eq!(targets[0].command, "go");
         assert_eq!(targets[0].env.get("PORT").map(String::as_str), Some("8080"));
+    }
+
+    #[test]
+    fn load_targets_health_fields() {
+        let dir = tempdir();
+        write_yaml(
+            dir.path(),
+            "api.yaml",
+            r#"
+name: api
+command: go
+health: "tcp://:7612"
+health_grace_secs: 5
+"#,
+        );
+        write_yaml(dir.path(), "plain.yaml", "name: plain\ncommand: true\n");
+        let targets = load_targets(dir.path()).expect("load");
+        let api = targets.iter().find(|t| t.name == "api").expect("api");
+        assert_eq!(api.health, "tcp://:7612");
+        assert_eq!(api.health_grace_secs, 5);
+        let plain = targets.iter().find(|t| t.name == "plain").expect("plain");
+        assert!(plain.health.is_empty(), "health defaults to unset");
+        assert_eq!(plain.health_grace_secs, 60, "grace defaults to 60s");
     }
 
     #[test]

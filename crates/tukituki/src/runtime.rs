@@ -208,6 +208,7 @@ pub fn status_str(s: Status) -> &'static str {
         Status::Stopped => "stopped",
         Status::Failed => "failed",
         Status::Unknown => "unknown",
+        Status::Unhealthy => "unhealthy",
     }
 }
 

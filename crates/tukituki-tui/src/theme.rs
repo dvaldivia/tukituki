@@ -57,6 +57,11 @@ pub fn icon_stopped() -> Style {
 pub fn icon_failed() -> Style {
     Style::default().fg(Color::Rgb(0xFF, 0x17, 0x44))
 }
+/// Amber, distinct from the yellow "stopped" ring: the pid exists but
+/// its `health:` probe is failing.
+pub fn icon_unhealthy() -> Style {
+    Style::default().fg(Color::Rgb(0xFF, 0x91, 0x00))
+}
 pub fn icon_unknown() -> Style {
     Style::default().fg(Color::Rgb(0x78, 0x90, 0x9C))
 }
@@ -118,5 +123,6 @@ pub fn status_icon(s: tukituki_state::Status) -> (&'static str, Style) {
         S::Stopped => ("○", icon_stopped()),
         S::Failed => ("✗", icon_failed()),
         S::Unknown => ("?", icon_unknown()),
+        S::Unhealthy => ("◐", icon_unhealthy()),
     }
 }

@@ -646,3 +646,113 @@ mod tukituki_process_test_helpers {
         listener.local_addr().unwrap().port()
     }
 }
+
+// ---- health probe -----------------------------------------------------
+
+/// A port nothing listens on: bind, read the port, drop the listener.
+fn free_port() -> u16 {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    l.local_addr().unwrap().port()
+}
+
+fn probed_sleep_target(name: &str, port: u16, grace: u64) -> RunTarget {
+    RunTarget {
+        health: format!("tcp://127.0.0.1:{port}"),
+        health_grace_secs: grace,
+        ..sleep_target(name)
+    }
+}
+
+fn pid_of(dir: &TempDir, name: &str) -> i32 {
+    let st = tukituki_state::State::load(dir.path().join(".tukituki").join("state.json"));
+    st.processes.get(name).map(|p| p.pid).unwrap_or(0)
+}
+
+#[test]
+fn health_probe_failing_reports_unhealthy_and_start_restarts() {
+    // The leader pid is alive (sleep 60) but nothing listens on the
+    // probed port: exactly the "alive but unbound" shape.
+    let port = free_port();
+    let (dir, m) = new_test_manager(vec![probed_sleep_target("api", port, 0)]);
+
+    m.start("api").expect("start");
+    thread::sleep(Duration::from_millis(200));
+    let first_pid = pid_of(&dir, "api");
+    assert!(first_pid > 0);
+
+    assert_eq!(m.get_status("api"), Status::Unhealthy);
+    assert_eq!(
+        m.get_all_statuses().get("api").copied(),
+        Some(Status::Unhealthy)
+    );
+    assert!(
+        m.describe("api").contains("unhealthy"),
+        "describe surfaces the probe verdict"
+    );
+
+    // `start` on an unhealthy target is NOT a no-op: it restarts.
+    m.start("api").expect("start again");
+    thread::sleep(Duration::from_millis(200));
+    let second_pid = pid_of(&dir, "api");
+    assert!(second_pid > 0);
+    assert_ne!(first_pid, second_pid, "unhealthy target must be relaunched");
+    assert!(
+        !tukituki_state::is_alive_pid(first_pid),
+        "old leader (pid {first_pid}) must be gone"
+    );
+
+    m.stop("api").expect("stop");
+}
+
+#[test]
+fn health_probe_passing_reports_running_and_start_is_noop() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (dir, m) = new_test_manager(vec![probed_sleep_target("api", port, 0)]);
+
+    m.start("api").expect("start");
+    thread::sleep(Duration::from_millis(200));
+    let first_pid = pid_of(&dir, "api");
+
+    assert_eq!(m.get_status("api"), Status::Running);
+    m.start("api").expect("start again");
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        pid_of(&dir, "api"),
+        first_pid,
+        "healthy target is left alone"
+    );
+
+    drop(listener);
+    m.stop("api").expect("stop");
+}
+
+#[test]
+fn health_probe_is_ignored_during_grace() {
+    let port = free_port();
+    let (_dir, m) = new_test_manager(vec![probed_sleep_target("api", port, 3600)]);
+    m.start("api").expect("start");
+    thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        m.get_status("api"),
+        Status::Running,
+        "a failing probe inside the grace window is not a verdict"
+    );
+    m.stop("api").expect("stop");
+}
+
+#[test]
+fn health_invalid_spec_never_reports_unhealthy() {
+    let mut t = sleep_target("api");
+    t.health = "7612".into();
+    t.health_grace_secs = 0;
+    let (_dir, m) = new_test_manager(vec![t]);
+    m.start("api").expect("start");
+    thread::sleep(Duration::from_millis(200));
+    assert_eq!(m.get_status("api"), Status::Running);
+    assert!(
+        m.describe("api").contains("INVALID"),
+        "typo is surfaced, not swallowed"
+    );
+    m.stop("api").expect("stop");
+}

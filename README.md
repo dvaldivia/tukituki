@@ -229,6 +229,8 @@ cleanup:
 | `cleanup` | no | Shell commands run after the process stops |
 | `otel` | no | Enable OpenTelemetry log collection for this target (`true`/`false`) |
 | `autorun` | no | Default `true`. Set to `false` to exclude the target from bulk auto-start (TUI launch, `tukituki start` with no name). It still shows up in the TUI and can be started manually by name. |
+| `health` | no | Liveness probe: `tcp://HOST:PORT` (HOST defaults to 127.0.0.1) or `http://HOST:PORT/PATH` (any HTTP status line counts, 4xx/5xx included; plain http only). Without it a target is "running" for as long as its leader pid exists — which stays true when `go run`/`npm run` outlives the real server, or when a server wedges mid-shutdown with its listeners closed. With it, `status` reports `unhealthy` and `start` restarts the target instead of treating it as already running. |
+| `health_grace_secs` | no | Default `60`. Seconds after start during which a failing probe is ignored, so a cold `go run` build is not flagged while it compiles. |
 | `tags` | no | List of tags (e.g. `["backend", "api"]`). Use `tukituki restart --tags=backend` (and same for `start`/`stop`/`status`/`list`) to operate only on targets that share at least one tag. |
 
 ### Grouping targets into folders

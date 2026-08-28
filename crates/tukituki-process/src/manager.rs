@@ -27,6 +27,7 @@ use nix::unistd::Pid;
 use tukituki_config::RunTarget;
 use tukituki_state::{ProcessState, State, Status, is_alive};
 
+use crate::health;
 use crate::otel_pids;
 use crate::otel_port;
 use crate::shell::build_shell_cmd;
@@ -448,11 +449,34 @@ impl Manager {
 
         // Build the spawn parameters before acquiring the lock, except
         // for the "already running" check which needs state access.
-        {
+        // "Already running" means alive AND (if the target declares a
+        // probe) answering. A leader pid that outlived its server, or a
+        // server wedged mid-shutdown with its listeners closed, used to
+        // make `start` a silent no-op for days.
+        let probe = {
             let inner = self.lock();
-            if let Some(ps) = inner.state.processes.get(&name) {
-                if ps.status == Status::Running && is_alive(Some(ps)) {
-                    return Ok(());
+            match inner.state.processes.get(&name) {
+                Some(ps) if ps.status == Status::Running && is_alive(Some(ps)) => {
+                    match health_probe_for(&target, ps) {
+                        Some(check) => Some(check),
+                        None => return Ok(()),
+                    }
+                }
+                _ => None,
+            }
+        };
+        if let Some(check) = probe {
+            match health::probe(&check) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    self.append_log_line(
+                        &name,
+                        &format!(
+                            "health: pid alive but probe {} failed ({e}); restarting",
+                            target.health
+                        ),
+                    );
+                    let _ = self.stop(&name);
                 }
             }
         }
@@ -755,30 +779,49 @@ impl Manager {
 
     /// Current status for a named process, reconciling Running→Stopped
     /// when the recorded PID is no longer alive.
+    ///
+    /// A target with a `health:` probe is additionally reported
+    /// `Unhealthy` when the pid is alive but the probe fails after the
+    /// grace window. The probe runs with the lock released.
     pub fn get_status(&self, name: &str) -> Status {
-        let inner = self.lock();
-        match inner.state.processes.get(name) {
-            None => Status::Unknown,
-            Some(ps) if ps.status == Status::Running && !is_alive(Some(ps)) => Status::Stopped,
-            Some(ps) => ps.status,
-        }
+        let (status, probe) = {
+            let inner = self.lock();
+            match inner.state.processes.get(name) {
+                None => (Status::Unknown, None),
+                Some(ps) => (
+                    liveness_status(ps),
+                    inner
+                        .targets
+                        .iter()
+                        .find(|t| t.name == name)
+                        .and_then(|t| health_probe_for(t, ps)),
+                ),
+            }
+        };
+        resolve_health(status, probe)
     }
 
     /// Per-name status map for every recorded process.
     pub fn get_all_statuses(&self) -> std::collections::BTreeMap<String, Status> {
-        let inner = self.lock();
-        inner
-            .state
-            .processes
-            .iter()
-            .map(|(name, ps)| {
-                let status = if ps.status == Status::Running && !is_alive(Some(ps)) {
-                    Status::Stopped
-                } else {
-                    ps.status
-                };
-                (name.clone(), status)
-            })
+        let snapshot: Vec<(String, Status, Option<health::HealthCheck>)> = {
+            let inner = self.lock();
+            inner
+                .state
+                .processes
+                .iter()
+                .map(|(name, ps)| {
+                    let probe = inner
+                        .targets
+                        .iter()
+                        .find(|t| &t.name == name)
+                        .and_then(|t| health_probe_for(t, ps));
+                    (name.clone(), liveness_status(ps), probe)
+                })
+                .collect()
+        };
+        snapshot
+            .into_iter()
+            .map(|(name, status, probe)| (name, resolve_health(status, probe)))
             .collect()
     }
 
@@ -971,10 +1014,7 @@ impl Manager {
             let _ = writeln!(out, "Virtual:      true (managed by tukituki)");
         }
         if let Some(ps) = &ps {
-            let mut status = ps.status;
-            if status == Status::Running && !is_alive(Some(ps)) {
-                status = Status::Stopped;
-            }
+            let status = resolve_health(liveness_status(ps), health_probe_for(&target, ps));
             let _ = writeln!(
                 out,
                 "Status:       {}",
@@ -983,6 +1023,7 @@ impl Manager {
                     Status::Stopped => "stopped",
                     Status::Failed => "failed",
                     Status::Unknown => "unknown",
+                    Status::Unhealthy => "unhealthy (pid alive, health probe failing)",
                 }
             );
             if ps.pid != 0 {
@@ -1001,6 +1042,20 @@ impl Manager {
             }
         } else {
             let _ = writeln!(out, "Status:       (never started)");
+        }
+        if !target.health.is_empty() {
+            match health::parse(&target.health) {
+                Ok(_) => {
+                    let _ = writeln!(
+                        out,
+                        "Health:       {} (grace {}s)",
+                        target.health, target.health_grace_secs
+                    );
+                }
+                Err(e) => {
+                    let _ = writeln!(out, "Health:       INVALID — {e}");
+                }
+            }
         }
 
         let _ = writeln!(out);
@@ -1360,4 +1415,37 @@ fn reaper_loop(manager: Manager, name: String, mut child: std::process::Child, l
         let _ = inner.state.save();
     }
     inner.reapers.remove(&name);
+}
+
+/// Liveness as the state file + `kill(pid, 0)` see it: `Running` only
+/// while the leader pid exists.
+fn liveness_status(ps: &ProcessState) -> Status {
+    if ps.status == Status::Running && !is_alive(Some(ps)) {
+        Status::Stopped
+    } else {
+        ps.status
+    }
+}
+
+/// The probe to run for `target` given its current process state, or
+/// `None` when no probe applies: no `health:` configured, the spec
+/// doesn't parse (surfaced by `describe`, never silently "unhealthy"),
+/// or the target is still inside its post-start grace window.
+fn health_probe_for(target: &RunTarget, ps: &ProcessState) -> Option<health::HealthCheck> {
+    if target.health.is_empty() {
+        return None;
+    }
+    if health::in_grace(ps.started_at, target.health_grace_secs) {
+        return None;
+    }
+    health::parse(&target.health).ok()
+}
+
+/// Fold a probe result into a liveness status. Only a `Running`
+/// process can be demoted to `Unhealthy`.
+fn resolve_health(status: Status, probe: Option<health::HealthCheck>) -> Status {
+    match (status, probe) {
+        (Status::Running, Some(check)) if health::probe(&check).is_err() => Status::Unhealthy,
+        (s, _) => s,
+    }
 }
