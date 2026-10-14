@@ -1276,3 +1276,52 @@ fn sidebar_renders_otel_unread_count() {
         lines.join("\n")
     );
 }
+
+#[test]
+fn wrapped_logs_keep_last_line_visible_at_bottom() {
+    let mut app = make_app(vec![target("api")]);
+    // 10 lines, each far wider than the log pane, so every logical
+    // line wraps into several rows. Previously the view sliced
+    // `height` logical lines and let Paragraph wrap them top-down,
+    // pushing the newest lines off the bottom of the screen.
+    for i in 0..10 {
+        let line = format!("line{i:02} ") + &"x".repeat(150);
+        dispatch(
+            &mut app,
+            AppEventForTest::LogLine {
+                target: "api".into(),
+                line,
+            },
+        );
+    }
+
+    // Without wrap the newest line is on screen (truncated).
+    let lines = tukituki_tui::test_support::render_to_lines(&app, 80, 12);
+    assert!(
+        lines.iter().any(|l| l.contains("line09")),
+        "unwrapped: newest line should be visible, got:\n{}",
+        lines.join("\n")
+    );
+
+    // Toggle wrap; the tail must still be readable.
+    dispatch(&mut app, key(KeyCode::Char('w')));
+    assert!(app.wrap_logs);
+    let lines = tukituki_tui::test_support::render_to_lines(&app, 80, 12);
+    assert!(
+        lines.iter().any(|l| l.contains("line09")),
+        "wrapped: newest line should be visible, got:\n{}",
+        lines.join("\n")
+    );
+    // And the very last wrapped row of that line is on screen too:
+    // the pane ends with a row of trailing x's, not a cut-off line.
+    let last_log_row = lines
+        .iter()
+        .rev()
+        .find(|l| l.contains("xxxx"))
+        .expect("some wrapped row");
+    assert!(
+        !last_log_row.contains("line0"),
+        "last row should be a continuation row, got: {last_log_row:?}\nfull:\n{}",
+        lines.join("\n")
+    );
+}

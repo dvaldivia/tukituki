@@ -28,7 +28,7 @@ nix = { version = "0.31", default-features = false, features = ["signal", "proce
 tabwriter = "1"
 ctrlc = "3"
 
-ratatui = "0.30"
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
 crossterm = "0.29"
 ansi-to-tui = "8"
 notify = { version = "8", default-features = false, features = ["macos_kqueue"] }

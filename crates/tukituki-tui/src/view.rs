@@ -301,6 +301,20 @@ fn render_log_pane<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
     let mut p = Paragraph::new(lines).style(Style::default());
     if app.wrap_logs {
         p = p.wrap(Wrap { trim: false });
+        // The slice above picked `height` *logical* lines ending at
+        // the scroll anchor. Once wrapped, those can occupy more than
+        // `height` rows, and Paragraph renders top-down — so without
+        // compensation the newest lines spill off the bottom and the
+        // user can never read the tail. Every logical line is at least
+        // one row, so the slice always fills the viewport; scroll the
+        // paragraph by the overflow so the bottom row stays anchored
+        // to the last line in the window.
+        let rows = p.line_count(body_area.width);
+        let height = body_area.height as usize;
+        if rows > height {
+            let overflow = (rows - height).min(u16::MAX as usize) as u16;
+            p = p.scroll((overflow, 0));
+        }
     }
     f.render_widget(p, body_area);
 
