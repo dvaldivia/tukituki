@@ -756,3 +756,62 @@ fn health_invalid_spec_never_reports_unhealthy() {
     );
     m.stop("api").expect("stop");
 }
+
+// ---- spawn failures ---------------------------------------------------
+
+#[test]
+fn missing_workdir_is_recorded_as_failed_with_reason() {
+    let mut t = sleep_target("web");
+    t.workdir = "does-not-exist".into();
+    let (dir, m) = new_test_manager(vec![t]);
+
+    let err = m.start("web").expect_err("start must fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("workdir \"does-not-exist\" does not exist"),
+        "{msg}"
+    );
+    assert!(msg.contains("resolved to"), "{msg}");
+
+    // state.json gets a failed entry (not `?`/Unknown) with no pid.
+    assert_eq!(m.get_status("web"), Status::Failed);
+
+    // The reason lands in both the ring buffer and the on-disk log.
+    let lines = m.get_log_lines("web");
+    assert!(
+        lines.iter().any(|l| l.contains("does not exist")),
+        "ring buffer: {lines:?}"
+    );
+    let log = fs::read_to_string(dir.path().join(".tukituki/logs/web.log")).expect("log");
+    assert!(log.contains("does not exist"), "log file: {log:?}");
+
+    // A failed entry with pid 0 must be safe to stop and to re-start
+    // once the config is fixed.
+    m.stop("web").expect("stop on failed entry");
+    fs::create_dir_all(dir.path().join("does-not-exist")).unwrap();
+    m.start("web").expect("start after fixing workdir");
+    thread::sleep(Duration::from_millis(200));
+    assert_eq!(m.get_status("web"), Status::Running);
+    m.stop("web").expect("stop");
+}
+
+#[test]
+fn start_all_continues_past_failures() {
+    let mut broken = sleep_target("broken");
+    broken.workdir = "nope".into();
+    let (_dir, m) = new_test_manager(vec![broken, sleep_target("after")]);
+
+    let err = m
+        .start_all()
+        .expect_err("start_all must report the failure");
+    assert!(err.to_string().contains("start broken:"), "{err}");
+
+    thread::sleep(Duration::from_millis(200));
+    assert_eq!(m.get_status("broken"), Status::Failed);
+    assert_eq!(
+        m.get_status("after"),
+        Status::Running,
+        "a target after the broken one must still be started"
+    );
+    m.stop_all().expect("stop_all");
+}

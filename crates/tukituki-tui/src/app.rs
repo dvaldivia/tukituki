@@ -729,6 +729,14 @@ impl<H: ManagerHandle> App<H> {
         self.status_msg_until_tick = 2;
     }
 
+    /// Like `flash`, but held long enough to be read after the screen
+    /// first opens (startup warnings). Multi-line messages are
+    /// collapsed onto one line since the status bar is a single row.
+    pub fn flash_sticky(&mut self, msg: &str) {
+        self.status_msg = msg.lines().collect::<Vec<_>>().join("; ");
+        self.status_msg_until_tick = 15;
+    }
+
     pub fn scroll_log(&mut self, delta: i32) {
         let Some(name) = self.selected_target_name() else {
             return;

@@ -37,9 +37,13 @@ pub fn run(cli: &Cli) -> ExitCode {
 
     // Start every target that isn't already alive, then bring up the
     // OTel collector if any target wants it. Errors are non-fatal: the
-    // TUI still opens so the user can see and fix the problem.
+    // TUI still opens so the user can see and fix the problem. The
+    // message is carried into the TUI's status line too — stderr is
+    // wiped the moment the alternate screen opens.
+    let mut startup_warning: Option<String> = None;
     if let Err(e) = mgr.start_all() {
         eprintln!("Warning: start all: {e}");
+        startup_warning = Some(format!("start all: {e}"));
     }
     if let Err(e) = mgr.ensure_otel_collector() {
         eprintln!("Warning: ensure otel collector: {e}");
@@ -50,7 +54,13 @@ pub fn run(cli: &Cli) -> ExitCode {
 
     let final_targets = mgr.get_targets();
 
-    let outcome = match tukituki_tui::start(final_targets, mgr.clone(), run_dir, project_root) {
+    let outcome = match tukituki_tui::start(
+        final_targets,
+        mgr.clone(),
+        run_dir,
+        project_root,
+        startup_warning,
+    ) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("Error: TUI: {e}");

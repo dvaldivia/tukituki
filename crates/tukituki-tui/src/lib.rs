@@ -124,11 +124,17 @@ pub struct SessionOutcome {
 /// Run the TUI until the user detaches (`q`) or quits-and-kills (`Q` /
 /// `Ctrl+C`).  Blocks the caller; returns `stop_all=true` when the
 /// caller should walk the target list and stop everything.
+///
+/// `startup_warning` is shown in the status line as soon as the screen
+/// opens. The caller's pre-TUI `eprintln!` is wiped the instant the
+/// alternate screen takes over, so a bulk-start failure would otherwise
+/// vanish before anyone reads it.
 pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     targets: Vec<RunTarget>,
     manager: H,
     run_dir: PathBuf,
     project_root: PathBuf,
+    startup_warning: Option<String>,
 ) -> io::Result<SessionOutcome> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -150,6 +156,9 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // on the same PTY fd.
     let project_root_for_watch = project_root.clone();
     let mut app = App::new(targets, manager, run_dir.clone(), project_root);
+    if let Some(msg) = startup_warning {
+        app.flash_sticky(&msg);
+    }
     // Hand the App a sender so action handlers can offload blocking
     // manager calls (stop/start/restart) to a worker thread and post
     // OpDone events back here. Without this the UI freezes for the

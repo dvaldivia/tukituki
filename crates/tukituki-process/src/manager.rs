@@ -482,7 +482,7 @@ impl Manager {
         }
 
         let (log_file_path, child, otel_endpoint_port) = {
-            let inner = self.lock();
+            let mut inner = self.lock();
             let log_path = inner.logs_dir.join(format!("{name}.log"));
 
             // Truncate the log on every (re)start so output reflects the
@@ -515,14 +515,27 @@ impl Manager {
             cmd.stdin(Stdio::null());
 
             // Workdir resolution: absolute as-is, relative joined with
-            // project_root.
+            // project_root. Validated up front: `Command::spawn` reports
+            // a missing cwd as a bare ENOENT, indistinguishable from a
+            // missing binary, and nothing would land in the log or
+            // state.json — the TUI showed `?` with no explanation.
             if !target.workdir.is_empty() {
                 let workdir = Path::new(&target.workdir);
-                if workdir.is_absolute() {
-                    cmd.current_dir(workdir);
+                let resolved = if workdir.is_absolute() {
+                    workdir.to_path_buf()
                 } else {
-                    cmd.current_dir(inner.project_root.join(&target.workdir));
+                    inner.project_root.join(workdir)
+                };
+                if !resolved.is_dir() {
+                    let msg = format!(
+                        "workdir {:?} does not exist (resolved to {})",
+                        target.workdir,
+                        resolved.display()
+                    );
+                    record_spawn_failure(&mut inner, &name, &log_path, &msg);
+                    return Err(io::Error::new(io::ErrorKind::NotFound, msg));
                 }
+                cmd.current_dir(resolved);
             }
 
             // Env: parent env, then the project root's `.env` for keys
@@ -564,7 +577,14 @@ impl Manager {
                 });
             }
 
-            let child = cmd.spawn()?;
+            let child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => {
+                    let msg = format!("failed to spawn {:?}: {e}", target.command);
+                    record_spawn_failure(&mut inner, &name, &log_path, &msg);
+                    return Err(io::Error::new(e.kind(), msg));
+                }
+            };
             (log_path, child, otel_port_used)
         };
         let _ = otel_endpoint_port; // kept for future telemetry; intentionally unused now
@@ -611,7 +631,12 @@ impl Manager {
     /// `StartAll`: start every target that isn't already running. Targets
     /// with parse errors are silently skipped, as are targets that opted
     /// out of bulk start via `autorun: false` — those can still be
-    /// started by name. Stops on first error.
+    /// started by name.
+    ///
+    /// Every target is attempted even when an earlier one fails: one
+    /// misconfigured target (say, a typo'd `workdir`) must not leave the
+    /// rest of the project unstarted with no explanation. The error
+    /// returned lists every failure, one per line.
     pub fn start_all(&self) -> io::Result<()> {
         let names: Vec<String> = self
             .lock()
@@ -620,11 +645,17 @@ impl Manager {
             .filter(|t| t.parse_error.is_empty() && t.autorun)
             .map(|t| t.name.clone())
             .collect();
+        let mut failures: Vec<String> = Vec::new();
         for name in names {
-            self.start(&name)
-                .map_err(|e| io::Error::other(format!("start {name}: {e}")))?;
+            if let Err(e) = self.start(&name) {
+                failures.push(format!("start {name}: {e}"));
+            }
         }
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(io::Error::other(failures.join("\n")))
+        }
     }
 
     /// Stop a target: SIGTERM the process group, wait up to 5s for the
@@ -1383,6 +1414,35 @@ fn append_exit_marker(log_path: &Path, code: i32) {
         let _ = f.sync_data();
     }
     let _ = File::open(log_path); // suppress unused-import warnings under cfg
+}
+
+/// Record a target that never got as far as a running process: the
+/// reason goes into its (already truncated) log file and the in-memory
+/// ring buffer, and `state.json` gets a `failed` entry with no pid so
+/// the TUI shows a red state with the explanation in the log pane
+/// rather than `?` over an empty log. `pid: 0` is safe: `is_alive_pid`
+/// and `stop` both treat non-positive pids as "nothing to signal".
+fn record_spawn_failure(inner: &mut Inner, name: &str, log_path: &Path, msg: &str) {
+    let line = format!("tukituki: {msg}");
+    if let Ok(mut f) = OpenOptions::new().append(true).open(log_path) {
+        use std::io::Write as _;
+        let _ = writeln!(f, "{line}");
+        let _ = f.sync_data();
+    }
+    inner.log_lines.entry(name.to_string()).or_default().clear();
+    append_locked(inner, name, &line);
+    inner.state.processes.insert(
+        name.to_string(),
+        ProcessState {
+            name: name.to_string(),
+            pid: 0,
+            log_file: log_path.display().to_string(),
+            started_at: Utc::now(),
+            status: Status::Failed,
+            exit_code: None,
+        },
+    );
+    let _ = inner.state.save();
 }
 
 /// Body of the reaper thread. Waits for the child, updates state on
