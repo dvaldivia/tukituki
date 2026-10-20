@@ -1,5 +1,6 @@
 pub mod list;
 pub mod logs;
+pub mod new;
 pub mod otel_collector;
 pub mod restart;
 pub mod start;

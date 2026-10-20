@@ -51,6 +51,24 @@ pub enum Command {
     #[command(after_help = "Examples:\n  tukituki version\n  tukituki version --json")]
     Version,
 
+    /// Create a new run target YAML file
+    #[command(
+        long_about = "Create a new .run/<name>.yaml file from a name and command string.\n\nThe command string is split on whitespace — the first token becomes `command` and the rest become `args`.\nThe .run/ directory is created automatically if it does not already exist.\nRefuses to overwrite an existing file.",
+        after_help = "Examples:\n  tukituki new api 'go run ./cmd/api -port 8080'\n  tukituki new worker 'node worker.js' -e PORT=3000 -e DEBUG=true\n  tukituki new docs 'hugo server --buildDrafts' -w documentation"
+    )]
+    New {
+        /// Target name (becomes .run/<name>.yaml)
+        name: String,
+        /// Command string: program plus arguments, split on whitespace
+        command: String,
+        /// Environment variable in KEY=VALUE format (repeatable)
+        #[arg(short = 'e', long = "env")]
+        env: Vec<String>,
+        /// Working directory relative to the project root
+        #[arg(short = 'w', long = "workdir")]
+        workdir: Option<String>,
+    },
+
     /// List all configured run targets
     #[command(
         long_about = "List all run targets defined in .run/*.yaml.\n\nOutputs name, command, and description for each target.\nUse --tags to filter to targets bearing at least one of the listed tags (comma-separated).\nUse --json for machine-readable output.",
@@ -161,6 +179,7 @@ INTERACTIVE MODE (default, requires a terminal):
 
 HEADLESS / SCRIPTED MODE (safe for automation and AI agents):
   Use subcommands for non-interactive control:
+    tukituki new <name> '<cmd>'  - scaffold a .run/<name>.yaml
     tukituki list              - list configured targets
     tukituki status            - show runtime status of all targets
     tukituki start [name]      - start one or all targets
@@ -207,6 +226,12 @@ pub fn run() -> ExitCode {
 
     match cli.command {
         Some(Command::Version) => commands::version::run(cli.json),
+        Some(Command::New {
+            ref name,
+            ref command,
+            ref env,
+            ref workdir,
+        }) => commands::new::run(&cli, name, command, env, workdir.as_deref()),
         Some(Command::List { ref tags }) => commands::list::run(&cli, tags),
         Some(Command::Status {
             ref target,
