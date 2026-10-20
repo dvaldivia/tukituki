@@ -3,7 +3,7 @@ name: release
 # Triggered on semver tag pushes (e.g. `v1.2.3`). Builds tukituki for
 # linux + darwin × x86_64 + arm64, uploads tarballs + checksums to the
 # GitHub Release, and renders the Homebrew formula in
-# dvaldivia/homebrew-dvaldivia when the HOMEBREW_TAP_GITHUB_TOKEN secret
+# dvaldivia/homebrew-tap when the HOMEBREW_TAP_GITHUB_TOKEN secret
 # is available.
 #
 # Cross-compilation strategy:
@@ -246,7 +246,7 @@ jobs:
     # first-release dry runs shouldn't fail just because the secret is
     # absent. Maintainers configure HOMEBREW_TAP_GITHUB_TOKEN once on
     # the dvaldivia/tukituki repo and every subsequent release picks it up.
-    # The formula lives in the shared dvaldivia/homebrew-dvaldivia tap.
+    # The formula lives in the shared dvaldivia/homebrew-tap tap.
     if: ${{ github.repository == 'dvaldivia/tukituki' }}
     runs-on: ubuntu-latest
     steps:
@@ -265,13 +265,13 @@ jobs:
           fi
           # Fail here, with a readable message, rather than as a bare 403
           # from `git push` later. A fine-grained PAT must grant
-          # Contents: read+write on dvaldivia/homebrew-dvaldivia.
+          # Contents: read+write on dvaldivia/homebrew-tap.
           perms="$(curl -sS -H "Authorization: Bearer ${TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/dvaldivia/homebrew-dvaldivia" \
+            "https://api.github.com/repos/dvaldivia/homebrew-tap" \
             | jq -r '.permissions.push // "none"')"
           if [[ "$perms" != "true" ]]; then
-            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot push to dvaldivia/homebrew-dvaldivia (expired, or missing Contents: write). Rotate the secret and re-run this job."
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot push to dvaldivia/homebrew-tap (expired, or missing Contents: write). Rotate the secret and re-run this job."
             exit 1
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -297,7 +297,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone "https://x-access-token:${TOKEN}@github.com/dvaldivia/homebrew-dvaldivia" tap
+          git clone "https://x-access-token:${TOKEN}@github.com/dvaldivia/homebrew-tap" tap
           cp rendered/Formula/tukituki.rb tap/Formula/tukituki.rb
           cd tap
           git config user.name  "tukituki release bot"

@@ -25,7 +25,7 @@ Pre-built binaries are published for linux × macOS × x86_64 + arm64.
 **Homebrew (macOS and Linux):**
 
 ```sh
-brew tap dvaldivia/dvaldivia
+brew tap dvaldivia/tap
 brew install tukituki
 ```
 

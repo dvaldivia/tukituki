@@ -8,7 +8,7 @@ weight: 1
 The easiest way to install on macOS and Linux:
 
 ```sh
-brew tap dvaldivia/dvaldivia
+brew tap dvaldivia/tap
 brew install tukituki
 ```
 
