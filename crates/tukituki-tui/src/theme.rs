@@ -28,6 +28,14 @@ pub fn selected() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+/// Pointer is over a sidebar row that isn't the selection. Lighter
+/// than [`selected`] so a click target reads as available, not current.
+pub fn hovered() -> Style {
+    Style::default()
+        .bg(Color::Rgb(0x37, 0x47, 0x4F))
+        .fg(Color::Rgb(0xEC, 0xEF, 0xF1))
+}
+
 pub fn normal_item() -> Style {
     Style::default().fg(Color::Rgb(0xB0, 0xBE, 0xC5))
 }

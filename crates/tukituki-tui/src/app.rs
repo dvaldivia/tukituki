@@ -35,6 +35,10 @@ pub struct App<H: ManagerHandle> {
     pub project_root: PathBuf,
 
     pub selected: usize,
+    /// Sidebar row under the pointer, if it is selectable. `None` when
+    /// the pointer is over the log pane, the legend, a separator, or
+    /// no motion has been reported yet.
+    pub hovered: Option<usize>,
     pub rows: Vec<Row>,
     pub folder_expanded: BTreeMap<String, bool>,
 
@@ -53,6 +57,11 @@ pub struct App<H: ManagerHandle> {
     pub help_visible: bool,
     pub describe: Option<String>,
 
+    /// Last terminal size, in cells. Click hit-testing replays the
+    /// sidebar layout against this. Seeded from the real terminal when
+    /// the TUI starts and updated on every resize. Defaults match a
+    /// typical window so tests can click without a tty.
+    pub last_width: u16,
     pub last_height: u16,
 
     /// Count of otel error events received since the user last had the
@@ -248,6 +257,7 @@ impl<H: ManagerHandle> App<H> {
             run_dir,
             project_root,
             selected: 0,
+            hovered: None,
             rows,
             folder_expanded,
             logs,
@@ -260,6 +270,7 @@ impl<H: ManagerHandle> App<H> {
             zoom_logs: false,
             help_visible: false,
             describe: None,
+            last_width: 80,
             last_height: 24,
             unread_otel_errors: 0,
             otel_blink_on: false,
@@ -459,7 +470,8 @@ impl<H: ManagerHandle> App<H> {
                 self.urgent = true;
                 input::handle_key(self, k)
             }
-            AppEvent::Resize(_, h) => {
+            AppEvent::Resize(w, h) => {
+                self.last_width = w;
                 self.last_height = h;
                 self.dirty = true;
                 self.urgent = true;
@@ -589,6 +601,21 @@ impl<H: ManagerHandle> App<H> {
                 }
                 Continuation::cont()
             }
+            AppEvent::Click { column, row } => {
+                // Same urgency as a key: selecting a service should
+                // repaint on the next loop, not after the frame cap.
+                self.dirty = true;
+                self.urgent = true;
+                input::handle_click(self, column, row);
+                Continuation::cont()
+            }
+            AppEvent::Hover { column, row } => {
+                if input::handle_hover(self, column, row) {
+                    self.dirty = true;
+                    self.urgent = true;
+                }
+                Continuation::cont()
+            }
             AppEvent::ScrollLog(delta) => {
                 // Mouse-wheel scrolls stay rate-limited intentionally:
                 // they're a high-frequency event class (a single
@@ -650,6 +677,16 @@ impl<H: ManagerHandle> App<H> {
         // Preserve selection on the same target name if possible.
         let prev_target = self.selected_target_name();
         self.rows = new_rows;
+        // A reload can shift rows out from under the pointer. Drop a
+        // hover that no longer names a selectable row; the next motion
+        // event puts it back. This has to happen before the early
+        // return below, which preserves selection by target name.
+        if self
+            .hovered
+            .is_some_and(|i| !self.rows.get(i).is_some_and(crate::rows::is_selectable))
+        {
+            self.hovered = None;
+        }
         if let Some(name) = prev_target {
             for (i, r) in self.rows.iter().enumerate() {
                 if let Row::Target { target_idx, .. } = r

@@ -183,6 +183,8 @@ tukituki restart api --json
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` / `j` / `k` | Select row |
+| click a service | Select that service |
+| click a folder | Expand or collapse it |
 | `Tab` | Cycle to next row |
 | `→` / `l` | Expand selected folder |
 | `←` / `h` | Collapse selected folder (or jump up to its header) |

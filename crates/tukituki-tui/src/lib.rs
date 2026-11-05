@@ -38,6 +38,35 @@ pub mod test_support {
     pub fn scroll_log(delta: i32) -> AppEvent {
         AppEvent::ScrollLog(delta)
     }
+    pub fn click(column: u16, row: u16) -> AppEvent {
+        AppEvent::Click { column, row }
+    }
+    pub fn hover(column: u16, row: u16) -> AppEvent {
+        AppEvent::Hover { column, row }
+    }
+
+    /// Terminal cell of sidebar row `row_index` for a window of
+    /// `width`×`height`. `None` when that row isn't on screen (zoom,
+    /// or the list area is shorter than the index).
+    pub fn sidebar_row_cell(
+        width: u16,
+        height: u16,
+        zoom_logs: bool,
+        has_footer: bool,
+        row_index: u16,
+    ) -> Option<(u16, u16)> {
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        };
+        let rect = crate::view::sidebar_rows_rect(area, zoom_logs, has_footer)?;
+        if row_index >= rect.height {
+            return None;
+        }
+        Some((rect.x, rect.y.saturating_add(row_index)))
+    }
     pub fn state_file_change() -> AppEvent {
         AppEvent::StateFileChange
     }
@@ -156,6 +185,13 @@ pub fn start<H: ManagerHandle + Send + Sync + 'static>(
     // on the same PTY fd.
     let project_root_for_watch = project_root.clone();
     let mut app = App::new(targets, manager, run_dir.clone(), project_root);
+    // Click hit-testing replays the layout against the last known
+    // size. A resize event updates it later; seed it now so the first
+    // click — before any resize — still lands on the right row.
+    if let Ok(size) = terminal.size() {
+        app.last_width = size.width;
+        app.last_height = size.height;
+    }
     if let Some(msg) = startup_warning {
         app.flash_sticky(&msg);
     }
@@ -382,6 +418,11 @@ fn input_loop(tx: mpsc::SyncSender<AppEvent>, gate: std::sync::Arc<crate::gate::
     // with no extra latency because `poll` returns immediately when an
     // event is ready, well before this timeout.
     const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+    // Last cell forwarded as a hover. Motion events fire far more
+    // often than the sidebar highlight can use; identical cells are
+    // dropped, and motion over the log pane is dropped once the
+    // pointer has left the sidebar.
+    let mut last_hover: Option<(u16, u16)> = None;
 
     loop {
         if gate.is_paused() {
@@ -419,17 +460,41 @@ fn input_loop(tx: mpsc::SyncSender<AppEvent>, gate: std::sync::Arc<crate::gate::
                             return;
                         }
                     }
-                    Ok(CtEvent::Mouse(MouseEvent { kind, .. })) => {
-                        use crossterm::event::MouseEventKind as Mk;
-                        let scroll = match kind {
-                            Mk::ScrollUp => Some(-3),
-                            Mk::ScrollDown => Some(3),
-                            _ => None,
-                        };
-                        if let Some(d) = scroll
-                            && tx.send(AppEvent::ScrollLog(d)).is_err()
-                        {
-                            return;
+                    Ok(CtEvent::Mouse(MouseEvent {
+                        kind, column, row, ..
+                    })) => {
+                        use crossterm::event::{MouseButton, MouseEventKind as Mk};
+                        match kind {
+                            Mk::ScrollUp => {
+                                if tx.send(AppEvent::ScrollLog(-3)).is_err() {
+                                    return;
+                                }
+                            }
+                            Mk::ScrollDown => {
+                                if tx.send(AppEvent::ScrollLog(3)).is_err() {
+                                    return;
+                                }
+                            }
+                            Mk::Down(MouseButton::Left) => {
+                                if tx.send(AppEvent::Click { column, row }).is_err() {
+                                    return;
+                                }
+                            }
+                            Mk::Moved => {
+                                let cell = (column, row);
+                                if last_hover != Some(cell) {
+                                    let over_sidebar = column < crate::theme::SIDEBAR_WIDTH;
+                                    let was_over = last_hover
+                                        .is_some_and(|(c, _)| c < crate::theme::SIDEBAR_WIDTH);
+                                    last_hover = Some(cell);
+                                    if over_sidebar || was_over {
+                                        if tx.send(AppEvent::Hover { column, row }).is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     Ok(_) => {}

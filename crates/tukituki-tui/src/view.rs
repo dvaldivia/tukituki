@@ -19,32 +19,16 @@ use crate::theme;
 pub fn render<H: ManagerHandle>(f: &mut Frame, app: &App<H>) {
     let area = f.area();
     let has_footer = !app.in_flight.is_empty();
-    let mut constraints: Vec<Constraint> = vec![Constraint::Length(1), Constraint::Min(0)];
-    if has_footer {
-        constraints.push(Constraint::Length(1));
-    }
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-    let header_area = chunks[0];
-    let body_area = chunks[1];
-    let footer_area = if has_footer { Some(chunks[2]) } else { None };
+    let (header_area, body_area, footer_area) = vertical_areas(area, has_footer);
 
     render_header(f, header_area, app);
 
     if app.zoom_logs {
         render_log_pane(f, body_area, app);
     } else {
-        let body = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(theme::SIDEBAR_WIDTH),
-                Constraint::Min(20),
-            ])
-            .split(body_area);
-        render_sidebar(f, body[0], app);
-        render_log_pane(f, body[1], app);
+        let (sidebar, logs) = sidebar_and_log(body_area);
+        render_sidebar(f, sidebar, app);
+        render_log_pane(f, logs, app);
     }
 
     if let Some(area) = footer_area {
@@ -103,22 +87,17 @@ fn render_sidebar<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::border());
-    let inner = block.inner(area);
     f.render_widget(block, area);
 
     // Reserve the bottom 5 lines for the key-binding legend.
-    let split = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(5)])
-        .split(inner);
-    let rows_area = split[0];
-    let hints_area = split[1];
+    let (rows_area, hints_area) = sidebar_parts(area);
 
     // Build target row lines.
     let mut lines: Vec<Line> = Vec::with_capacity(app.rows.len());
     for (i, r) in app.rows.iter().enumerate() {
         let is_sel = i == app.selected;
-        lines.push(render_row(r, app, is_sel));
+        let is_hover = !is_sel && app.hovered == Some(i);
+        lines.push(render_row(r, app, is_sel, is_hover));
     }
     let widget = Paragraph::new(lines).style(theme::normal_item());
     f.render_widget(widget, rows_area);
@@ -128,13 +107,18 @@ fn render_sidebar<H: ManagerHandle>(f: &mut Frame, area: Rect, app: &App<H>) {
         Line::from(" S start    d dump"),
         Line::from(" c clear    e edit"),
         Line::from(" q detach   Q exit"),
-        Line::from(" ? help"),
+        Line::from(" ? help   click"),
     ])
     .style(theme::key_hint());
     f.render_widget(hints, hints_area);
 }
 
-fn render_row<H: ManagerHandle>(r: &Row, app: &App<H>, is_sel: bool) -> Line<'static> {
+fn render_row<H: ManagerHandle>(
+    r: &Row,
+    app: &App<H>,
+    is_sel: bool,
+    is_hover: bool,
+) -> Line<'static> {
     match r {
         Row::Folder {
             group,
@@ -146,6 +130,8 @@ fn render_row<H: ManagerHandle>(r: &Row, app: &App<H>, is_sel: bool) -> Line<'st
             let mut style = theme::normal_item().add_modifier(Modifier::BOLD);
             if is_sel {
                 style = theme::selected();
+            } else if is_hover {
+                style = theme::hovered().add_modifier(Modifier::BOLD);
             }
             Line::from(Span::styled(
                 pad_to(theme::SIDEBAR_WIDTH as usize - 2, &s),
@@ -172,6 +158,8 @@ fn render_row<H: ManagerHandle>(r: &Row, app: &App<H>, is_sel: bool) -> Line<'st
             let mut label_style = theme::normal_item();
             if is_sel {
                 label_style = theme::selected();
+            } else if is_hover {
+                label_style = theme::hovered();
             } else if otel_unread {
                 label_style = if app.otel_blink_on {
                     theme::otel_alert()
@@ -388,6 +376,8 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(" Navigation:"),
         Line::from("   ↑/↓ or j/k     move selection"),
+        Line::from("   click          select a service"),
+        Line::from("   click folder   expand / collapse"),
         Line::from("   Tab            cycle to next row"),
         Line::from("   →/l            expand folder"),
         Line::from("   ←/h            collapse folder"),
@@ -446,6 +436,59 @@ fn render_text_overlay_lines(f: &mut Frame, area: Rect, title: &str, lines: Vec<
         Paragraph::new(lines).style(theme::status_msg().remove_modifier(Modifier::ITALIC)),
         inner,
     );
+}
+
+/// Header, body, and the optional one-row footer. Shared with click
+/// hit-testing so a click lands on the row the user sees.
+fn vertical_areas(area: Rect, has_footer: bool) -> (Rect, Rect, Option<Rect>) {
+    let mut constraints: Vec<Constraint> = vec![Constraint::Length(1), Constraint::Min(0)];
+    if has_footer {
+        constraints.push(Constraint::Length(1));
+    }
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+    let footer = if has_footer { Some(chunks[2]) } else { None };
+    (chunks[0], chunks[1], footer)
+}
+
+fn sidebar_and_log(body: Rect) -> (Rect, Rect) {
+    let split = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(theme::SIDEBAR_WIDTH),
+            Constraint::Min(20),
+        ])
+        .split(body);
+    (split[0], split[1])
+}
+
+/// Service list and the key-hint legend inside the sidebar border.
+fn sidebar_parts(sidebar: Rect) -> (Rect, Rect) {
+    let inner = Block::default().borders(Borders::ALL).inner(sidebar);
+    let split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(5)])
+        .split(inner);
+    (split[0], split[1])
+}
+
+/// Screen rect of the clickable service list. `None` in zoom mode
+/// (the sidebar is hidden) or when the terminal is too small to draw
+/// a row.
+pub(crate) fn sidebar_rows_rect(area: Rect, zoom_logs: bool, has_footer: bool) -> Option<Rect> {
+    if zoom_logs {
+        return None;
+    }
+    let (_, body, _) = vertical_areas(area, has_footer);
+    let (sidebar, _) = sidebar_and_log(body);
+    let (rows, _) = sidebar_parts(sidebar);
+    if rows.width == 0 || rows.height == 0 {
+        None
+    } else {
+        Some(rows)
+    }
 }
 
 fn pad_to(width: usize, s: &str) -> String {

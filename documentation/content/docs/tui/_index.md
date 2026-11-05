@@ -47,6 +47,8 @@ When run targets are organised into [folder groups]({{< relref "/docs/configurat
 
 Folders are **collapsed by default**, keeping the panel compact regardless of how many targets a group contains. The `(3)` counter on the folder row always reflects the total number of targets in the group, expanded or not.
 
+Click a service to select it and show its logs — you don't have to use the arrow keys. Click a folder row to expand or collapse it. The row under the pointer highlights so it's clear the list is clickable.
+
 Below the process list, a horizontal rule separates the list from the **key hint area**, which displays the most commonly used keybindings as a quick reference without leaving the screen.
 
 ### Status Icons
@@ -82,6 +84,8 @@ The log viewport **auto-scrolls to the bottom** whenever new output arrives — 
 |-----|--------|
 | `↑` / `k` | Move selection up in the process list. |
 | `↓` / `j` | Move selection down in the process list. |
+| click a service | Select that service and show its logs. |
+| click a folder | Expand or collapse that group. |
 | `Tab` | Cycle to the next row (wraps around). |
 | `→` / `l` | Expand the selected folder. |
 | `←` / `h` | Collapse the selected folder (or jump up to its header if a child is selected). |
