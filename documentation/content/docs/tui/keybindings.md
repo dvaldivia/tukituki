@@ -11,6 +11,8 @@ Quick reference for every key recognised by the tukituki TUI. Keys are case-sens
 |-----|--------|
 | `↑` / `k` | Move selection up in the process list. |
 | `↓` / `j` | Move selection down in the process list. |
+| click a service | Select that service and show its logs. Same as moving the selection onto it. |
+| click a folder | Expand or collapse that group. |
 | `Tab` | Cycle to the next row (wraps around to the top). |
 | `→` / `l` | Expand the selected folder. |
 | `←` / `h` | Collapse the selected folder, or — when a child target is selected — jump to its folder header and collapse it. |

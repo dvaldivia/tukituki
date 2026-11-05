@@ -22,6 +22,18 @@ pub enum AppEvent {
     StateFileChange,
     /// Mouse wheel scroll (positive = down, negative = up).
     ScrollLog(i32),
+    /// Left click, in terminal cells. Hit-tested against the sidebar.
+    Click {
+        column: u16,
+        row: u16,
+    },
+    /// Pointer moved to a new cell. Forwarded only while the pointer
+    /// is over the sidebar (or has just left it), so the log pane
+    /// doesn't flood the loop. Drives the sidebar hover highlight.
+    Hover {
+        column: u16,
+        row: u16,
+    },
     /// External editor exited.
     EditorDone(std::io::Result<()>),
     /// A background operation (start/stop/restart/restart-all/dump)

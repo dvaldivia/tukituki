@@ -177,11 +177,27 @@ pub enum AppEventForTest {
     Tick,
     LogLine { target: String, line: String },
     ScrollLog(i32),
+    Click { column: u16, row: u16 },
+    Hover { column: u16, row: u16 },
     StateFileChange,
     FileChange,
     OpDone { id: u64, summary: String },
     OtelError,
     OtelBlink,
+}
+
+/// Click the visible sidebar row `index`, using the same layout the
+/// TUI paints. Panics if that row isn't on screen.
+fn click_sidebar_row(app: &App<FakeManager>, index: u16) -> AppEventForTest {
+    let (column, row) = tukituki_tui::test_support::sidebar_row_cell(
+        app.last_width,
+        app.last_height,
+        app.zoom_logs,
+        !app.in_flight.is_empty(),
+        index,
+    )
+    .unwrap_or_else(|| panic!("sidebar row {index} is not on screen"));
+    AppEventForTest::Click { column, row }
 }
 
 fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
@@ -192,6 +208,8 @@ fn dispatch<H: ManagerHandle>(app: &mut App<H>, ev: AppEventForTest) -> bool {
             tukituki_tui::test_support::log_line(target, line)
         }
         AppEventForTest::ScrollLog(d) => tukituki_tui::test_support::scroll_log(d),
+        AppEventForTest::Click { column, row } => tukituki_tui::test_support::click(column, row),
+        AppEventForTest::Hover { column, row } => tukituki_tui::test_support::hover(column, row),
         AppEventForTest::StateFileChange => tukituki_tui::test_support::state_file_change(),
         AppEventForTest::FileChange => tukituki_tui::test_support::file_change(),
         AppEventForTest::OpDone { id, summary } => tukituki_tui::test_support::op_done(id, summary),
@@ -245,6 +263,195 @@ fn folder_expand_collapse_reshapes_rows() {
     // Collapse.
     dispatch(&mut app, key(KeyCode::Char('h')));
     assert_eq!(app.rows.len(), 2);
+}
+
+#[test]
+fn click_sidebar_row_selects_that_service() {
+    let mut app = make_app(vec![target("alpha"), target("beta"), target("gamma")]);
+    let lines = tukituki_tui::test_support::render_to_lines(&app, app.last_width, app.last_height);
+    let (_, row) = tukituki_tui::test_support::sidebar_row_cell(
+        app.last_width,
+        app.last_height,
+        false,
+        false,
+        2,
+    )
+    .expect("gamma is on screen");
+    assert!(
+        lines[row as usize].contains("gamma"),
+        "click coordinate must land on the painted gamma row, got {:?}",
+        lines[row as usize]
+    );
+
+    let click = click_sidebar_row(&app, 2);
+    dispatch(&mut app, click);
+    assert_eq!(app.selected, 2);
+    assert_eq!(app.selected_target_name().as_deref(), Some("gamma"));
+}
+
+#[test]
+fn click_outside_sidebar_does_not_change_selection() {
+    let mut app = make_app(vec![target("alpha"), target("beta")]);
+    // Log pane starts past the sidebar's right edge.
+    let log_column = app.last_width - 1;
+    dispatch(
+        &mut app,
+        AppEventForTest::Click {
+            column: log_column,
+            row: 3,
+        },
+    );
+    assert_eq!(app.selected, 0);
+    // The sidebar border itself is not a row.
+    dispatch(&mut app, AppEventForTest::Click { column: 0, row: 2 });
+    assert_eq!(app.selected, 0);
+}
+
+#[test]
+fn click_folder_toggles_it_without_arrows() {
+    let mut app = make_app(vec![
+        target("api"),
+        grouped("kb-a", "kb"),
+        grouped("kb-b", "kb"),
+    ]);
+    assert_eq!(app.rows.len(), 2, "folder starts collapsed");
+
+    let click = click_sidebar_row(&app, 1);
+    dispatch(&mut app, click);
+    assert_eq!(app.rows.len(), 4, "clicking the folder expands it");
+    assert_eq!(app.selected, 1, "selection stays on the folder header");
+
+    let click = click_sidebar_row(&app, 3);
+    dispatch(&mut app, click);
+    assert_eq!(app.selected_target_name().as_deref(), Some("kb-b"));
+
+    let click = click_sidebar_row(&app, 1);
+    dispatch(&mut app, click);
+    assert_eq!(app.rows.len(), 2, "clicking the folder again collapses it");
+}
+
+#[test]
+fn click_separator_is_ignored() {
+    let mut app = make_app(vec![target("api"), virtual_target("otel-errors")]);
+    // api, separator, otel-errors.
+    let click = click_sidebar_row(&app, 1);
+    dispatch(&mut app, click);
+    assert_eq!(app.selected, 0);
+    assert_eq!(app.selected_target_name().as_deref(), Some("api"));
+}
+
+#[test]
+fn click_otel_row_marks_errors_seen() {
+    let mut app = make_app(vec![target("api"), virtual_target("otel-errors")]);
+    dispatch(&mut app, AppEventForTest::OtelError);
+    assert_eq!(app.unread_otel_errors, 1);
+
+    let click = click_sidebar_row(&app, 2);
+    dispatch(&mut app, click);
+    assert_eq!(app.selected_target_name().as_deref(), Some("otel-errors"));
+    assert_eq!(app.unread_otel_errors, 0);
+}
+
+#[test]
+fn click_while_help_is_open_does_not_select() {
+    let mut app = make_app(vec![target("alpha"), target("beta")]);
+    dispatch(&mut app, key(KeyCode::Char('?')));
+    let click = click_sidebar_row(&app, 1);
+    dispatch(&mut app, click);
+    assert!(app.help_visible);
+    assert_eq!(app.selected, 0);
+}
+
+#[test]
+fn click_switches_service_and_clears_search() {
+    let mut app = make_app(vec![target("alpha"), target("beta")]);
+    dispatch(&mut app, log("alpha", "hello"));
+    dispatch(&mut app, key(KeyCode::Char('/')));
+    dispatch(&mut app, key(KeyCode::Char('h')));
+    assert!(app.search_mode);
+
+    let click = click_sidebar_row(&app, 1);
+    dispatch(&mut app, click);
+    assert_eq!(app.selected_target_name().as_deref(), Some("beta"));
+    assert!(
+        !app.search_mode,
+        "leaving the searched service clears search"
+    );
+    assert!(app.search_query.is_empty());
+}
+
+#[test]
+fn click_respects_footer_taking_a_row() {
+    let mut app = make_app(vec![target("alpha"), target("beta")]);
+    app.in_flight.insert(1, "restarting alpha".into());
+    let lines = tukituki_tui::test_support::render_to_lines(&app, app.last_width, app.last_height);
+    let (_, row) = tukituki_tui::test_support::sidebar_row_cell(
+        app.last_width,
+        app.last_height,
+        false,
+        true,
+        1,
+    )
+    .expect("beta is on screen");
+    assert!(
+        lines[row as usize].contains("beta"),
+        "footer must not shift the click off the beta row, got {:?}",
+        lines[row as usize]
+    );
+    let click = click_sidebar_row(&app, 1);
+    dispatch(&mut app, click);
+    assert_eq!(app.selected_target_name().as_deref(), Some("beta"));
+}
+
+#[test]
+fn click_in_zoom_mode_does_not_select() {
+    let mut app = make_app(vec![target("alpha"), target("beta")]);
+    dispatch(&mut app, key(KeyCode::Char('z')));
+    assert!(app.zoom_logs);
+    // The cell that would have been beta with the sidebar showing.
+    let (column, row) = tukituki_tui::test_support::sidebar_row_cell(
+        app.last_width,
+        app.last_height,
+        false,
+        false,
+        1,
+    )
+    .unwrap();
+    dispatch(&mut app, AppEventForTest::Click { column, row });
+    assert_eq!(app.selected, 0);
+}
+
+#[test]
+fn hover_tracks_sidebar_row_and_clears_outside_it() {
+    let mut app = make_app(vec![target("alpha"), target("beta")]);
+    let (column, row) = tukituki_tui::test_support::sidebar_row_cell(
+        app.last_width,
+        app.last_height,
+        false,
+        false,
+        1,
+    )
+    .unwrap();
+    dispatch(&mut app, AppEventForTest::Hover { column, row });
+    assert_eq!(app.hovered, Some(1));
+    // Same row, next column: no change, still beta.
+    dispatch(
+        &mut app,
+        AppEventForTest::Hover {
+            column: column + 1,
+            row,
+        },
+    );
+    assert_eq!(app.hovered, Some(1));
+    let log_column = app.last_width - 1;
+    dispatch(
+        &mut app,
+        AppEventForTest::Hover {
+            column: log_column,
+            row,
+        },
+    );
+    assert_eq!(app.hovered, None);
 }
 
 #[test]

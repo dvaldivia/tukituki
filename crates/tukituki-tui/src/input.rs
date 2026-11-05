@@ -1,4 +1,5 @@
-//! Key-event → action dispatcher.
+//! Key-event → action dispatcher. Mouse clicks on the sidebar are
+//! handled here too (`handle_click` / `handle_hover`).
 //!
 //! Mirrors `internal/tui/keymap.go` + the `Update` switch in
 //! `internal/tui/model.go`. Every binding is wired here; actions that
@@ -8,9 +9,12 @@
 use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use ratatui::layout::Rect;
+
 use crate::app::{App, Continuation};
 use crate::handle::ManagerHandle;
-use crate::rows::Row;
+use crate::rows::{self, Row};
+use crate::view;
 
 pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuation {
     // Modal: help overlay & describe overlay swallow most keys except
@@ -83,7 +87,10 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
     }
 
     match k.code {
-        KeyCode::Char('?') => app.help_visible = true,
+        KeyCode::Char('?') => {
+            app.help_visible = true;
+            app.hovered = None;
+        }
         KeyCode::Char('/') => {
             app.search_mode = true;
             app.search_query.clear();
@@ -110,6 +117,10 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
         }
         KeyCode::Char('z') => {
             app.zoom_logs = !app.zoom_logs;
+            // Motion events stop while zoom drops mouse capture, so a
+            // hover left over from before the toggle would highlight
+            // a row the pointer may have left.
+            app.hovered = None;
             // Drop mouse capture in zoom mode so the terminal's
             // native text-selection (drag-to-select, double-click,
             // etc.) works again — copying log output is the whole
@@ -135,12 +146,89 @@ pub fn handle_key<H: ManagerHandle>(app: &mut App<H>, k: KeyEvent) -> Continuati
                 "zoom off"
             });
         }
-        KeyCode::Char('D') => action_describe(app),
+        KeyCode::Char('D') => {
+            app.hovered = None;
+            action_describe(app);
+        }
         KeyCode::Char('E') => action_edit(app),
         _ => {}
     }
 
     Continuation::cont()
+}
+
+/// Left click. A service row becomes the selection (and its logs
+/// show on the right). A folder row toggles open/closed. Clicks on
+/// the log pane, the legend, separators, and overlays do nothing.
+pub fn handle_click<H: ManagerHandle>(app: &mut App<H>, column: u16, row: u16) {
+    if app.help_visible || app.describe.is_some() {
+        return;
+    }
+    let Some(idx) = sidebar_row_index(app, column, row) else {
+        return;
+    };
+    let Some(clicked) = app.rows.get(idx).cloned() else {
+        return;
+    };
+    if !rows::is_selectable(&clicked) {
+        return;
+    }
+    if idx != app.selected {
+        if app.search_mode {
+            app.reset_search();
+        }
+        app.selected = idx;
+        app.mark_otel_seen_if_selected();
+    }
+    if matches!(clicked, Row::Folder { .. }) {
+        toggle_folder(app);
+    }
+}
+
+/// Update the hover highlight. Returns true when the highlighted row
+/// changed and the sidebar needs a repaint.
+pub fn handle_hover<H: ManagerHandle>(app: &mut App<H>, column: u16, row: u16) -> bool {
+    if app.help_visible || app.describe.is_some() {
+        return clear_hover(app);
+    }
+    let next = sidebar_row_index(app, column, row)
+        .filter(|&idx| app.rows.get(idx).is_some_and(rows::is_selectable));
+    if next == app.hovered {
+        return false;
+    }
+    app.hovered = next;
+    true
+}
+
+fn clear_hover<H: ManagerHandle>(app: &mut App<H>) -> bool {
+    app.hovered.take().is_some()
+}
+
+/// Map a terminal cell to a sidebar row index. `None` when the cell
+/// is outside the service list (border, legend, log pane, empty
+/// space under the last row, zoom mode).
+fn sidebar_row_index<H: ManagerHandle>(app: &App<H>, column: u16, row: u16) -> Option<usize> {
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: app.last_width,
+        height: app.last_height,
+    };
+    let rect = view::sidebar_rows_rect(area, app.zoom_logs, !app.in_flight.is_empty())?;
+    if column < rect.x || row < rect.y {
+        return None;
+    }
+    let dx = column - rect.x;
+    let dy = row - rect.y;
+    if dx >= rect.width || dy >= rect.height {
+        return None;
+    }
+    let idx = dy as usize;
+    if idx >= app.rows.len() {
+        None
+    } else {
+        Some(idx)
+    }
 }
 
 fn move_selection<H: ManagerHandle>(app: &mut App<H>, delta: i32) {
